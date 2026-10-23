@@ -32,9 +32,8 @@ const navigation: NavItem[] = [
     },
     {
         label: 'Career Profile',
+        routeName: 'career-profile.show',
         icon: icon('M16 7a4 4 0 11-8 0 4 4 0 018 0zM4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1'),
-        disabled: true,
-        soon: true,
     },
     {
         label: 'Applications',

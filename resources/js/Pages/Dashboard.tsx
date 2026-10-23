@@ -6,7 +6,26 @@ interface DashboardProps {
         applications: number;
         documents: number;
     };
+    careerProfileCompletion: {
+        filled: number;
+        total: number;
+        percentage: number;
+        completed: string[];
+        missing: string[];
+        next_section: string | null;
+    };
+    hasProfile: boolean;
 }
+
+const sectionLabels: Record<string, string> = {
+    contact: 'Kontak',
+    summary: 'Ringkasan',
+    experiences: 'Pengalaman',
+    educations: 'Pendidikan',
+    skills: 'Skill',
+    projects: 'Proyek',
+    certifications: 'Sertifikasi',
+};
 
 const steps = [
     {
@@ -26,14 +45,31 @@ const steps = [
     },
 ];
 
-export default function Dashboard({ counts }: DashboardProps) {
+export default function Dashboard({ counts, careerProfileCompletion, hasProfile }: DashboardProps) {
     const user = usePage().props.auth.user;
     const firstName = user.name.split(' ')[0];
 
+    const progress = careerProfileCompletion.percentage ?? 0;
+    const nextLabel = careerProfileCompletion.next_section
+        ? sectionLabels[careerProfileCompletion.next_section]
+        : null;
+
     const stats = [
-        { label: 'Career profile', value: 'Not created', hint: 'Your source of truth for every document' },
-        { label: 'Applications', value: String(counts.applications), hint: 'Jobs you are tailoring documents for' },
-        { label: 'Documents', value: String(counts.documents), hint: 'Generated CVs and cover letters' },
+        {
+            label: 'Career profile',
+            value: hasProfile ? `${progress}%` : 'Belum dibuat',
+            hint: nextLabel ? `Selanjutnya: ${nextLabel}` : 'Your source of truth for every document',
+        },
+        {
+            label: 'Applications',
+            value: String(counts.applications),
+            hint: 'Jobs you are tailoring documents for',
+        },
+        {
+            label: 'Documents',
+            value: String(counts.documents),
+            hint: 'Generated CVs and cover letters',
+        },
     ];
 
     return (
@@ -59,6 +95,27 @@ export default function Dashboard({ counts }: DashboardProps) {
                         </div>
                     ))}
                 </section>
+
+                {hasProfile && (
+                    <section className="card p-5 sm:p-6">
+                        <div className="flex items-center justify-between gap-2">
+                            <h2 className="text-h2">Profil Karier</h2>
+                            <span className="badge-primary">{progress}% lengkap</span>
+                        </div>
+                        <div className="mt-4 h-2 w-full rounded-full bg-surface-sunken overflow-hidden">
+                            <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
+                        </div>
+                        {nextLabel && (
+                            <p className="mt-2 text-small text-foreground-muted">
+                                Bagian berikutnya: <span className="font-medium">{nextLabel}</span>
+                                {' '}
+                                <Link href={route('career-profile.show')} className="underline hover:no-underline">
+                                    Lanjutkan
+                                </Link>
+                            </p>
+                        )}
+                    </section>
+                )}
 
                 <section className="card p-5 sm:p-6">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">

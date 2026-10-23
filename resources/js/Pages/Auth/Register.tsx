@@ -26,6 +26,13 @@ export default function Register() {
         <GuestLayout>
             <Head title="Register" />
 
+            <div className="mb-6">
+                <h1 className="text-h1">Create your account</h1>
+                <p className="mt-1 text-small text-foreground-muted">
+                    Start building a CV grounded in your real experience.
+                </p>
+            </div>
+
             <form onSubmit={submit}>
                 <div>
                     <InputLabel htmlFor="name" value="Name" />
@@ -106,7 +113,7 @@ export default function Register() {
                 <div className="mt-4 flex items-center justify-end">
                     <Link
                         href={route('login')}
-                        className="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        className="text-small text-foreground-muted underline underline-offset-2 hover:text-foreground"
                     >
                         Already registered?
                     </Link>

@@ -1,3 +1,82 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        @apply bg-background text-body text-foreground antialiased;
+    }
+
+    h1,
+    h2,
+    h3 {
+        @apply text-foreground;
+    }
+
+    /* Consistent focus ring across the app, keyboard-only friendly. */
+    :focus-visible {
+        @apply outline-none ring-2 ring-primary/40 ring-offset-2 ring-offset-background;
+    }
+}
+
+@layer components {
+    .btn {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-small font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+    }
+
+    .btn-primary {
+        @apply btn bg-primary text-on-primary hover:bg-primary-hover;
+    }
+
+    .btn-secondary {
+        @apply btn border border-border-strong bg-surface text-foreground hover:bg-surface-muted;
+    }
+
+    .btn-ghost {
+        @apply btn text-foreground-muted hover:bg-surface-muted hover:text-foreground;
+    }
+
+    .card {
+        @apply rounded-xl border border-border bg-surface shadow-card;
+    }
+
+    .field-label {
+        @apply mb-1.5 block text-small font-medium text-foreground;
+    }
+
+    .field-input {
+        @apply w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-body text-foreground placeholder:text-foreground-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20;
+    }
+
+    .field-hint {
+        @apply mt-1.5 text-caption text-foreground-muted;
+    }
+
+    .field-error {
+        @apply mt-1.5 text-caption text-danger;
+    }
+
+    .badge {
+        @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-caption font-medium;
+    }
+
+    .badge-neutral {
+        @apply badge bg-surface-sunken text-foreground-muted;
+    }
+
+    .badge-success {
+        @apply badge bg-success-soft text-success;
+    }
+
+    .badge-warning {
+        @apply badge bg-warning-soft text-warning;
+    }
+
+    .badge-danger {
+        @apply badge bg-danger-soft text-danger;
+    }
+}

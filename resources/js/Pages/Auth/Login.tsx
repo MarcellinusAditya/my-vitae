@@ -32,8 +32,15 @@ export default function Login({
         <GuestLayout>
             <Head title="Log in" />
 
+            <div className="mb-6">
+                <h1 className="text-h1">Welcome back</h1>
+                <p className="mt-1 text-small text-foreground-muted">
+                    Log in to keep working on your CV.
+                </p>
+            </div>
+
             {status && (
-                <div className="mb-4 text-sm font-medium text-green-600">
+                <div className="mb-4 text-small font-medium text-success">
                     {status}
                 </div>
             )}
@@ -84,7 +91,7 @@ export default function Login({
                                 )
                             }
                         />
-                        <span className="ms-2 text-sm text-gray-600">
+                        <span className="ms-2 text-small text-foreground-muted">
                             Remember me
                         </span>
                     </label>
@@ -94,7 +101,7 @@ export default function Login({
                     {canResetPassword && (
                         <Link
                             href={route('password.request')}
-                            className="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                            className="text-small text-foreground-muted underline underline-offset-2 hover:text-foreground"
                         >
                             Forgot your password?
                         </Link>

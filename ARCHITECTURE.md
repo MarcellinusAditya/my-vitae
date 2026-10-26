@@ -73,16 +73,16 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 
 ## 4. Kondisi implementasi saat ini
 
-(Section ini menggambarkan kondisi per Phase 3. Lihat bagian bawah untuk catatan Phase 1–3.)
+(Section ini menggambarkan kondisi per Phase 4. Lihat bagian bawah untuk catatan Phase 1–4.)
 
-- Model: `User`, `CareerProfile` + 6 section profil, `ProfileDocument` (Phase 3).
-- Controller: `ProfileController` + `Auth/*` (Breeze), `CareerProfileController`, 6 section controller, `ProfileDocumentController` (import CV).
-- Policy: `CareerProfilePolicy`, `ProfileDocumentPolicy`. Service: `CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`, `Ai\*` (Phase 3).
-- Job: `ExtractCvDocumentJob` (queue `database`, timeout 300s).
-- Migration: `users`, `cache`, `jobs`, 7 tabel profil, `profile_documents`.
-- Halaman: `Welcome`, `Dashboard`, auth, profile, `CareerProfile/Index`, `CareerProfile/Import/{Index,Review}`.
+- Model: `User`, `CareerProfile` + 6 section profil, `ProfileDocument` (Phase 3), `JobApplication`, `JobRequirementAnalysis` (Phase 4).
+- Controller: `Auth/*` (Breeze), `ProfileController`, `CareerProfileController`, 6 section controller, `ProfileDocumentController`, `JobApplicationController` (Phase 4).
+- Policy: `CareerProfilePolicy`, `ProfileDocumentPolicy`, `JobApplicationPolicy`. Service: `CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`, `JobApplicationService`, `ProfileSnapshotService`, `Ai\*`.
+- Job: `ExtractCvDocumentJob`, `AnalyzeJobApplicationJob` (queue `database`, timeout 300s).
+- Migration: `users`, `cache`, `jobs`, 7 tabel profil, `profile_documents`, `job_applications`, `job_requirement_analyses`.
+- Halaman: `Welcome`, `Dashboard`, auth, profile, `CareerProfile/Index`, `CareerProfile/Import/{Index,Review}`, `Applications/{Index,Create,Edit,Show}`.
 
-## 4a. Catatan Phase 1–3
+## 4a. Catatan Phase 1–4
 
 ### Phase 1 — fondasi UI
 - Design tokens di `tailwind.config.js` + `resources/css/app.css` (`btn-*`, `card`, `field-*`, `badge-*`), `AuthenticatedLayout` (sidebar + mobile drawer), `GuestLayout` disamakan, landing page produk.
@@ -96,15 +96,21 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 - **Upload:** `POST /career-profile/documents` menerima `pdf,docx` maks 10 MB (`StoreProfileDocumentRequest`), disimpan di disk `local` (`cv-uploads/`) dengan nama acak; nama asli hanya metadata.
 - **Ekstraksi teks:** `CvTextExtractor` — PDF via `smalot/pdfparser` (text layer; scan → string kosong → status `failed` dengan kode `no_text`), DOCX via `phpoffice/phpword` (walk sections/tabel/cells). Teks < 100 karakter dianggap tidak cukup.
 - **AI:** binding provider-agnostic `CvExtractionProvider` → `OpenAiCompatibleCvExtraction` (config `services.ai`, OpenAI-compatible, 9Router OK). Output divalidasi ketat oleh `CvDraftValidator` (schema, cap panjang, URL/email di-null-kan jika invalid, tanggal unparseable → null, confidence 0–100) — model tidak dipercaya; data yang tidak sesuai schema dibuang.
-  - **Catatan gateway:** 9Router membalas **SSE stream** walau request memakai `stream:false`; provider mendeteksi dan merakit `choices[].delta.content` dari baris `data:` sebelum validasi. Jangan hapus jalur ini.
-- **Queue:** `ExtractCvDocumentJob` — status `pending → processing → completed|failed`; error disimpan sebagai kode (`no_text`, `provider_unavailable`, `invalid_output`, `extraction_failed`, `file_missing`) dan diterjemahkan ke pesan Indonesia di UI. Worker harus jalan manual: `php artisan queue:work --tries=1`.
+- **Queue:** `ExtractCvDocumentJob` — status `pending → processing → completed|failed`; error disimpan sebagai kode dan diterjemahkan ke pesan Indonesia di UI.
 - **Review:** `GET /career-profile/documents/{document}` merender `CareerProfile/Import/Review` — halaman polling status via `?status=1` (JSON), lalu form per section: tiap item punya checkbox "Sertakan", field bisa diedit, submit memakai `transform()` agar payload dibangun dari yang dipilih/diedit.
 - **Merge:** `POST .../confirm` (`CvProfileMergeService`) — hanya section yang dikirim yang diterapkan; contact/summary di-overwrite, baris list **di-append** (sort_order setelah max existing), data lama tidak dihapus; validasi ulang server-side.
-- **Hapus:** `DELETE .../{document}` menghapus record + file (`ProfileDocument::booted` → `Storage::disk('local')->delete`).
-- **Download:** `GET .../download` lewat route terotorisasi (private disk), owner-only.
-- **Nav:** item "Import CV" ditambahkan di `AuthenticatedLayout`.
-- Flash message di-share lewat `HandleInertiaRequests` (`flash.success` / `flash.error`) — sebelumnya halaman Phase 2 sudah memakai tapi belum pernah terisi.
-- Test: `tests/Feature/CvImportTest.php` (11 tc) + `tests/Unit/CvDraftValidatorTest.php` (6 tc).
+- **Hapus:** `DELETE .../{document}` menghapus record + file (`ProfileDocument::booted` → `Storage::disk('local')->delete`). **Download:** route terotorisasi (private disk), owner-only.
+
+### Phase 4 — job application intake & job-fit analysis
+- **Intake:** CRUD lamaran (`JobApplicationController`) dengan status workflow `draft → ready_to_apply → applied → interview → rejected → offer` (label Indonesia di `JobApplication::STATUSES`). JD wajib ≥ 50 karakter (`JobApplicationRequest`). Duplikasi lamaran menyalin isi lowongan tanpa analisis.
+- **Klien LLM bersama:** `Services/Ai/ChatCompletionClient` — satu jalur untuk semua panggilan chat completion; menangani **SSE stream dari gateway** (9Router mengirim `data:` deltas walau `stream:false`); `OpenAiCompatibleCvExtraction` (Phase 3) kini memakainya juga.
+- **Analisis:** `JobFitAnalysisProvider` → `OpenAiCompatibleJobFitAnalysis`. Output berisi `requirements[]` (`category`, `priority`, `match_status` matched/partial/not_evidenced, `evidence_refs[]`, `recommendation`), `keyword_suggestions[]`, `seniority`, `summary`. Tidak ada skor tunggal/prediksi ATS.
+- **GUARDRAIL BUKTI (penting):** `JobFitAnalysisValidator::normalize()` membuang setiap `evidence_ref` yang tidak menunjuk baris nyata di snapshot; requirement yang kehilangan semua bukti **diturunkan ke `not_evidenced`** (`demoted` dihitung); `supported_by_profile` pada keyword dipaksa `false` bila tidak ada bukti valid. Job memanggil `normalize()` **dua kali** (provider juga memanggilnya) sebagai defense-in-depth — provider yang melewati validator tetap tidak bisa menyimpan klaim tak terbukti. Jangan hapus langkah ini.
+- **Snapshot reproducibility:** `ProfileSnapshotService` membangun snapshot profil ber-ID saat analisis diminta (`JobApplicationService::queueAnalysis`); snapshot + `job_snapshot` disimpan di row analisis, jadi hasil lama tetap menjelaskan dirinya walau profil/JD kemudian diubah. Profil kosong → `empty_profile`.
+- **Queue & polling:** `AnalyzeJobApplicationJob` (status `pending → processing → completed|failed`), UI halaman `Applications/Show` polling `GET /applications/{application}/analysis-status`.
+- **UI:** tab **Kecocokan** (3 grup kartu: cocok/sebagian/belum ada bukti, bukti + saran per requirement, kata kunci didukung vs belum) dan **Detail lowongan**. Dashboard memakai hitungan lamaran nyata + 5 lamaran terbaru.
+- **Catatan implementasi:** hindari `latestOfMany()` untuk daftar (kolom ambigu saat select terbatas) — gunakan `analyses()->first()` (`analyses()` sudah `latest('id')`).
+- Test: `JobApplicationTest` (12 tc) + `JobFitAnalysisTest` (7 tc) + `JobFitAnalysisValidatorTest` (7 tc).
 
 ## 5. Risiko terbuka
 
@@ -112,6 +118,7 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 |---|---|---|
 | Renderer PDF belum dipilih | Menentukan kualitas ekspor | Evaluasi di Phase 7; uji selectable text + page break |
 | Queue worker tidak otomatis jalan di lokal | Job AI menumpuk di tabel `jobs` | Dokumentasikan `php artisan queue:work` (sudah di AGENTS.md) |
-| Provider gateway bisa balas SSE tanpa diminta | Parser provider gagal bila dihapus | Jalur SSE di `messageContent()` sudah ada + catatan di §4a |
-| AI usage/rate-limit belum dibatasi | Biaya tak terkontrol saat banyak impor | Phase 8 (§4.10 PROJECT_PLAN) |
+| Provider gateway bisa balas SSE tanpa diminta | Parser provider gagal bila dihapus | Jalur SSE di `ChatCompletionClient` + catatan §4a |
+| AI usage/rate-limit belum dibatasi | Biaya tak terkontrol saat banyak impor/analisis | Phase 5/8 (§4.10 PROJECT_PLAN) |
 | PDF scan tanpa OCR | Import gagal dengan pesan jelas | OCR = Phase 9; saat ini `no_text` by design |
+| Analisis memakai model yang sama dengan ekstraksi | Kualitas job-fit bergantung `OPENAI_MODEL` | Ganti model cukup lewat env; prompt terpisah per operasi |

@@ -3,16 +3,16 @@
 namespace App\Services\Ai;
 
 use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 
 /**
- * Calls any OpenAI-compatible chat completions endpoint (OpenAI, 9Router, ...)
+ * Calls any [OI]-compatible chat completions endpoint ([OI], 9Router, ...)
  * configured through config/services.php → 'ai'.
  */
 class OpenAiCompatibleCvExtraction implements CvExtractionProvider
 {
     private const MAX_INPUT_CHARS = 16000;
+
+    public function __construct(private readonly ChatCompletionClient $client) {}
 
     public function name(): string
     {
@@ -21,38 +21,12 @@ class OpenAiCompatibleCvExtraction implements CvExtractionProvider
 
     public function extractDraft(string $cvText): array
     {
-        $apiKey = config('services.ai.key');
-        $baseUrl = rtrim((string) config('services.ai.base', 'https://api.openai.com/v1'), '/');
-        $model = (string) config('services.ai.model', 'gpt-4o-mini');
-
-        if (empty($apiKey)) {
-            throw new \RuntimeException('provider_unavailable');
-        }
-
         $chunk = mb_substr($this->normalize($cvText), 0, self::MAX_INPUT_CHARS);
 
-        $response = Http::timeout((int) config('services.ai.timeout', 90))
-            ->withToken($apiKey)
-            ->post($baseUrl.'/chat/completions', [
-                'model' => $model,
-                'temperature' => 0.2,
-                'stream' => false,
-                'response_format' => ['type' => 'json_object'],
-                'messages' => [
-                    ['role' => 'system', 'content' => 'You only output one valid JSON object. Never add commentary or markdown.'],
-                    ['role' => 'user', 'content' => $this->prompt($chunk)],
-                ],
-            ]);
-
-        if (! $response->successful()) {
-            Log::warning('CV extraction provider failed', [
-                'status' => $response->status(),
-            ]);
-
-            throw new \RuntimeException('provider_unavailable');
-        }
-
-        $content = $this->messageContent($response);
+        $content = $this->client->complete([
+            ['role' => 'system', 'content' => 'You only output one valid JSON object. Never add commentary or markdown.'],
+            ['role' => 'user', 'content' => $this->prompt($chunk)],
+        ]);
 
         return CvDraftValidator::validate($content);
     }
@@ -61,49 +35,9 @@ class OpenAiCompatibleCvExtraction implements CvExtractionProvider
      * Read the assistant message from either a regular completion or an SSE
      * stream that some gateways (e.g. 9Router) return regardless of `stream:false`.
      */
-    private function messageContent(Response $response): string
+    public function messageContent(Response $response): string
     {
-        $content = (string) $response->json('choices.0.message.content', '');
-
-        if ($content !== '') {
-            return $content;
-        }
-
-        $body = (string) $response->body();
-
-        if (! str_contains($body, 'data:')) {
-            return '';
-        }
-
-        $assembled = '';
-
-        foreach (preg_split('/\R/', $body) as $line) {
-            $line = trim($line);
-
-            if (! str_starts_with($line, 'data:')) {
-                continue;
-            }
-
-            $payload = trim(substr($line, 5));
-
-            if ($payload === '' || $payload === '[DONE]') {
-                continue;
-            }
-
-            $decoded = json_decode($payload, true);
-
-            if (! is_array($decoded)) {
-                continue;
-            }
-
-            $delta = $decoded['choices'][0]['delta']['content'] ?? null;
-
-            if (is_string($delta)) {
-                $assembled .= $delta;
-            }
-        }
-
-        return $assembled;
+        return $this->client->messageContent($response);
     }
 
     private function prompt(string $cvText): string

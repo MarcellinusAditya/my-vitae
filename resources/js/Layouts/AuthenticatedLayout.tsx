@@ -42,9 +42,8 @@ const navigation: NavItem[] = [
     },
     {
         label: 'Applications',
+        routeName: 'applications.index',
         icon: icon('M9 12h6m-6 4h6M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z'),
-        disabled: true,
-        soon: true,
     },
     {
         label: 'Documents',

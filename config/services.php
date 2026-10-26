@@ -35,4 +35,22 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | AI / LLM provider (OpenAI-compatible)
+    |--------------------------------------------------------------------------
+    |
+    | Scoped to parsing CV text into structured profile drafts. The base URL is
+    | configurable so a proxy/gateway (e.g. 9Router) can be used instead of the
+    | public OpenAI endpoint. Never log the key or the CV text.
+    |
+    */
+
+    'ai' => [
+        'key' => env('OPENAI_API_KEY'),
+        'base' => env('OPENAI_API_BASE', 'https://api.openai.com/v1'),
+        'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
+        'timeout' => env('OPENAI_TIMEOUT', 120),
+    ],
+
 ];

@@ -36,6 +36,11 @@ const navigation: NavItem[] = [
         icon: icon('M16 7a4 4 0 11-8 0 4 4 0 018 0zM4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1'),
     },
     {
+        label: 'Import CV',
+        routeName: 'career-profile.import.index',
+        icon: icon('M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12L7 9m5-5l5 5'),
+    },
+    {
         label: 'Applications',
         icon: icon('M9 12h6m-6 4h6M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z'),
         disabled: true,

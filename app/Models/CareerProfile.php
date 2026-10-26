@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
@@ -29,7 +30,7 @@ class CareerProfile extends Model
         'date_format',
     ];
 
-    public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
@@ -62,5 +63,10 @@ class CareerProfile extends Model
     public function certifications(): HasMany
     {
         return $this->hasMany(ProfileCertification::class, 'career_profile_id')->orderBy('sort_order');
+    }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(ProfileDocument::class, 'career_profile_id')->latest();
     }
 }

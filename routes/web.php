@@ -2,13 +2,14 @@
 
 use App\Http\Controllers\CareerProfileController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\ProfileContactController;
-use App\Http\Controllers\ProfileExperienceController;
-use App\Http\Controllers\ProfileEducationController;
-use App\Http\Controllers\ProfileSkillController;
-use App\Http\Controllers\ProfileProjectController;
 use App\Http\Controllers\ProfileCertificationController;
+use App\Http\Controllers\ProfileContactController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ProfileDocumentController;
+use App\Http\Controllers\ProfileEducationController;
+use App\Http\Controllers\ProfileExperienceController;
+use App\Http\Controllers\ProfileProjectController;
+use App\Http\Controllers\ProfileSkillController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -31,6 +32,14 @@ Route::middleware('auth')->group(function () {
     // Career Profile
     Route::get('/career-profile', [CareerProfileController::class, 'show'])->name('career-profile.show');
     Route::patch('/career-profile', [CareerProfileController::class, 'update'])->name('career-profile.update');
+
+    // CV Import
+    Route::get('/career-profile/import', [ProfileDocumentController::class, 'index'])->name('career-profile.import.index');
+    Route::post('/career-profile/documents', [ProfileDocumentController::class, 'store'])->name('career-profile.documents.store');
+    Route::get('/career-profile/documents/{document}', [ProfileDocumentController::class, 'show'])->name('career-profile.import.show');
+    Route::post('/career-profile/documents/{document}/confirm', [ProfileDocumentController::class, 'confirm'])->name('career-profile.import.confirm');
+    Route::get('/career-profile/documents/{document}/download', [ProfileDocumentController::class, 'download'])->name('career-profile.documents.download');
+    Route::delete('/career-profile/documents/{document}', [ProfileDocumentController::class, 'destroy'])->name('career-profile.documents.destroy');
 
     Route::patch('/career-profile/contact', [ProfileContactController::class, 'update'])->name('career-profile.contact.update');
 

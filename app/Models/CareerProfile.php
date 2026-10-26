@@ -69,4 +69,9 @@ class CareerProfile extends Model
     {
         return $this->hasMany(ProfileDocument::class, 'career_profile_id')->latest();
     }
+
+    public function jobApplications(): HasMany
+    {
+        return $this->hasMany(JobApplication::class, 'career_profile_id');
+    }
 }

@@ -46,6 +46,11 @@ class User extends Authenticatable
         return $this->hasMany(ProfileDocument::class)->latest();
     }
 
+    public function jobApplications(): HasMany
+    {
+        return $this->hasMany(JobApplication::class);
+    }
+
     /**
      * Get the attributes that should be cast.
      *

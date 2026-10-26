@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CareerProfileController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\JobApplicationController;
 use App\Http\Controllers\ProfileCertificationController;
 use App\Http\Controllers\ProfileContactController;
 use App\Http\Controllers\ProfileController;
@@ -67,6 +68,19 @@ Route::middleware('auth')->group(function () {
     Route::patch('/career-profile/certifications/{certification}', [ProfileCertificationController::class, 'update'])->name('career-profile.certifications.update');
     Route::delete('/career-profile/certifications/{certification}', [ProfileCertificationController::class, 'destroy'])->name('career-profile.certifications.destroy');
     Route::post('/career-profile/certifications/reorder', [ProfileCertificationController::class, 'reorder'])->name('career-profile.certifications.reorder');
+
+    // Job Applications
+    Route::get('/applications', [JobApplicationController::class, 'index'])->name('applications.index');
+    Route::get('/applications/create', [JobApplicationController::class, 'create'])->name('applications.create');
+    Route::post('/applications', [JobApplicationController::class, 'store'])->name('applications.store');
+    Route::get('/applications/{application}', [JobApplicationController::class, 'show'])->name('applications.show');
+    Route::get('/applications/{application}/edit', [JobApplicationController::class, 'edit'])->name('applications.edit');
+    Route::patch('/applications/{application}', [JobApplicationController::class, 'update'])->name('applications.update');
+    Route::patch('/applications/{application}/status', [JobApplicationController::class, 'updateStatus'])->name('applications.status');
+    Route::post('/applications/{application}/analyze', [JobApplicationController::class, 'analyze'])->name('applications.analyze');
+    Route::get('/applications/{application}/analysis-status', [JobApplicationController::class, 'analysisStatus'])->name('applications.analysis.status');
+    Route::post('/applications/{application}/duplicate', [JobApplicationController::class, 'duplicate'])->name('applications.duplicate');
+    Route::delete('/applications/{application}', [JobApplicationController::class, 'destroy'])->name('applications.destroy');
 });
 
 require __DIR__.'/auth.php';

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class GeneratedDocument extends Model
 {
@@ -28,6 +29,17 @@ class GeneratedDocument extends Model
     public const STATUS_FAILED = 'failed';
 
     public const TONES = ['professional', 'formal', 'warm'];
+
+    public const TEMPLATES = [
+        'ats_plain' => 'ATS Standar',
+        'ats_compact' => 'ATS Rapat',
+    ];
+
+    /** Soft limits used for overflow warnings (not hard errors). */
+    public const WORD_LIMITS = [
+        'resume' => ['concise' => 700, 'detailed' => 1200],
+        'cover_letter' => ['default' => 450],
+    ];
 
     public const TONE_LABELS = [
         'professional' => 'Profesional',
@@ -57,6 +69,7 @@ class GeneratedDocument extends Model
     protected $fillable = [
         'job_application_id',
         'job_requirement_analysis_id',
+        'parent_version_id',
         'type',
         'title',
         'template_key',
@@ -66,6 +79,9 @@ class GeneratedDocument extends Model
         'generation_status',
         'error_code',
         'content_json',
+        'section_order',
+        'word_count',
+        'last_saved_at',
         'model_name',
     ];
 
@@ -73,13 +89,47 @@ class GeneratedDocument extends Model
     {
         return [
             'content_json' => 'array',
+            'section_order' => 'array',
             'version' => 'integer',
+            'word_count' => 'integer',
+            'last_saved_at' => 'datetime',
         ];
     }
 
     public function jobApplication(): BelongsTo
     {
         return $this->belongsTo(JobApplication::class);
+    }
+
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(DocumentRevision::class)->latest('id');
+    }
+
+    /**
+     * Section order for rendering: stored order, or the default for the type.
+     *
+     * @return list<string>
+     */
+    public function resolvedSectionOrder(): array
+    {
+        $stored = $this->section_order ?? [];
+
+        if ($this->type === self::TYPE_COVER_LETTER) {
+            return ['opening', 'body_paragraphs', 'closing'];
+        }
+
+        $allowed = array_keys(self::RESUME_SECTIONS);
+        $stored = array_values(array_filter($stored, fn ($section) => in_array($section, $allowed, true)));
+
+        // Append any section the stored order forgot (e.g. older documents).
+        foreach ($allowed as $section) {
+            if (! in_array($section, $stored, true)) {
+                $stored[] = $section;
+            }
+        }
+
+        return $stored;
     }
 
     public function analysis(): BelongsTo

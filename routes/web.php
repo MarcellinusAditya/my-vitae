@@ -90,6 +90,10 @@ Route::middleware('auth')->group(function () {
     Route::patch('/documents/{document}', [GeneratedDocumentController::class, 'update'])->name('documents.update');
     Route::post('/documents/{document}/regenerate', [GeneratedDocumentController::class, 'regenerate'])->name('documents.regenerate');
     Route::get('/documents/{document}/status', [GeneratedDocumentController::class, 'status'])->name('documents.status');
+    Route::patch('/documents/{document}/autosave', [GeneratedDocumentController::class, 'autosave'])->name('documents.autosave');
+    Route::patch('/documents/{document}/order', [GeneratedDocumentController::class, 'reorder'])->name('documents.reorder');
+    Route::post('/documents/{document}/revisions/{revision}/restore', [GeneratedDocumentController::class, 'restore'])->name('documents.revisions.restore');
+    Route::get('/documents/{document}/preview', [GeneratedDocumentController::class, 'preview'])->name('documents.preview');
     Route::delete('/documents/{document}', [GeneratedDocumentController::class, 'destroy'])->name('documents.destroy');
 });
 

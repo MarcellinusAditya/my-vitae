@@ -20,13 +20,29 @@ class DocumentGenerationService
     }
 
     /**
+     * Word count delegate so jobs can persist it without injecting the editor service.
+     *
+     * @param  array<string, mixed>  $content
+     */
+    public function editorWordCount(array $content, string $type): int
+    {
+        return app(DocumentEditorService::class)->wordCount($content, $type);
+    }
+
+    /**
      * Queue a new version of a document for the application.
      *
      * @param  array{tone?: string|null, language?: string|null, recipient_name?: string|null}  $options
+     * @param  GeneratedDocument|null  $parent  version being regenerated from (enables per-section merge)
      */
-    public function queue(JobApplication $application, string $type, array $options = []): GeneratedDocument
-    {
-        return DB::transaction(function () use ($application, $type, $options) {
+    public function queue(
+        JobApplication $application,
+        string $type,
+        array $options = [],
+        ?GeneratedDocument $parent = null,
+        ?string $section = null,
+    ): GeneratedDocument {
+        return DB::transaction(function () use ($application, $type, $options, $parent, $section) {
             $version = (int) $application->generatedDocuments()
                 ->where('type', $type)
                 ->max('version') + 1;
@@ -34,22 +50,42 @@ class DocumentGenerationService
             $analysis = $application->analyses()->first();
 
             $language = $options['language']
+                ?? $parent?->language
                 ?? $application->language
                 ?? $application->careerProfile?->default_language
                 ?? 'id';
 
-            return $application->generatedDocuments()->create([
+            $document = $application->generatedDocuments()->create([
                 'job_requirement_analysis_id' => $analysis?->id,
+                'parent_version_id' => $parent?->id,
                 'type' => $type,
                 'title' => $this->title($application, $type, $language, $version),
-                'template_key' => 'ats_plain',
+                'template_key' => $parent?->template_key ?? 'ats_plain',
                 'language' => $language,
                 'tone' => $type === GeneratedDocument::TYPE_COVER_LETTER
-                    ? ($options['tone'] ?? $application->careerProfile?->writing_style ?? 'professional')
+                    ? ($options['tone'] ?? $parent?->tone ?? $application->careerProfile?->writing_style ?? 'professional')
                     : null,
                 'version' => $version,
                 'generation_status' => GeneratedDocument::STATUS_PENDING,
             ]);
+
+            if ($parent !== null) {
+                $document->update(['section_order' => $parent->section_order]);
+            }
+
+            // Section-scoped regeneration carries the parent content so the job can
+            // swap only the requested section.
+            if ($parent !== null && $section !== null && is_array($parent->content_json)) {
+                $document->update([
+                    'content_json' => [
+                        ...$parent->content_json,
+                        '_regenerate_section' => $section,
+                        '_parent_content' => $parent->content_json,
+                    ],
+                ]);
+            }
+
+            return $document->refresh();
         });
     }
 

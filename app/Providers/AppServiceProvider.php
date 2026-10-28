@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Services\Ai\CvExtractionProvider;
+use App\Services\Ai\DocumentGenerationProvider;
 use App\Services\Ai\JobFitAnalysisProvider;
 use App\Services\Ai\OpenAiCompatibleCvExtraction;
+use App\Services\Ai\OpenAiCompatibleDocumentGeneration;
 use App\Services\Ai\OpenAiCompatibleJobFitAnalysis;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
@@ -20,6 +22,7 @@ class AppServiceProvider extends ServiceProvider
         // without touching domain logic (PROJECT_PLAN.md §6).
         $this->app->bind(CvExtractionProvider::class, OpenAiCompatibleCvExtraction::class);
         $this->app->bind(JobFitAnalysisProvider::class, OpenAiCompatibleJobFitAnalysis::class);
+        $this->app->bind(DocumentGenerationProvider::class, OpenAiCompatibleDocumentGeneration::class);
     }
 
     /**

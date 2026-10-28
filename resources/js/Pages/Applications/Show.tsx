@@ -52,6 +52,13 @@ interface ShowProps {
         status_label: string;
         created_at: string;
         updated_at: string;
+        documents?: {
+            id: number;
+            type: string;
+            type_label: string;
+            version: number;
+            generation_status: 'pending' | 'processing' | 'completed' | 'failed';
+        }[];
     };
     analysis: Analysis | null;
     statuses: Record<string, string>;
@@ -88,7 +95,7 @@ const evidenceLabel = (ref: string): string => {
 };
 
 export default function ApplicationShow({ application, analysis, statuses, hasProfile, flash }: ShowProps) {
-    const [tab, setTab] = useState<'fit' | 'details'>('fit');
+    const [tab, setTab] = useState<'fit' | 'documents' | 'details'>('fit');
     const [statusValue, setStatusValue] = useState(application.status);
     const running = analysis?.status === 'pending' || analysis?.status === 'processing';
     const [polling, setPolling] = useState(running);
@@ -179,6 +186,7 @@ export default function ApplicationShow({ application, analysis, statuses, hasPr
             <div className="mb-5 flex gap-2 border-b border-border" role="tablist" aria-label="Bagian lamaran">
                 {([
                     ['fit', 'Kecocokan'],
+                    ['documents', 'Dokumen'],
                     ['details', 'Detail lowongan'],
                 ] as const).map(([key, label]) => (
                     <button
@@ -380,6 +388,79 @@ export default function ApplicationShow({ application, analysis, statuses, hasPr
                             )}
                         </>
                     )}
+                </div>
+            )}
+
+            {tab === 'documents' && (
+                <div className="space-y-6">
+                    <section className="card p-5 sm:p-6">
+                        <h2 className="text-h3">Buat dokumen</h2>
+                        <p className="mt-0.5 text-small text-foreground-muted">
+                            CV dan cover letter dibuat dari profil Anda + analisis lowongan ini. Setiap generate membuat versi baru.
+                        </p>
+
+                        {analysis?.status !== 'completed' && (
+                            <p className="mt-3 text-small text-warning">
+                                Analisis kecocokan belum selesai. Jalankan analisis dulu agar dokumen selaras dengan lowongan.
+                            </p>
+                        )}
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                className="btn-primary"
+                                disabled={analysis?.status !== 'completed'}
+                                onClick={() => router.post(route('documents.store', application.id), { type: 'resume' })}
+                            >
+                                Buat CV
+                            </button>
+                            <button
+                                type="button"
+                                className="btn-secondary"
+                                disabled={analysis?.status !== 'completed'}
+                                onClick={() => router.post(route('documents.store', application.id), { type: 'cover_letter' })}
+                            >
+                                Buat Cover Letter
+                            </button>
+                        </div>
+                    </section>
+
+                    <section className="card p-5 sm:p-6">
+                        <h2 className="text-h3">Dokumen lamaran ini</h2>
+
+                        {(application.documents ?? []).length === 0 ? (
+                            <p className="mt-3 text-small text-foreground-muted">Belum ada dokumen untuk lamaran ini.</p>
+                        ) : (
+                            <div className="mt-4 overflow-x-auto">
+                                <table className="w-full min-w-[560px] text-left text-small">
+                                    <thead>
+                                        <tr className="border-b border-border text-caption uppercase tracking-wide text-foreground-subtle">
+                                            <th className="py-2 pr-4 font-medium">Dokumen</th>
+                                            <th className="py-2 pr-4 font-medium">Versi</th>
+                                            <th className="py-2 pr-4 font-medium">Status</th>
+                                            <th className="py-2 text-right font-medium">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(application.documents ?? []).map((document) => (
+                                            <tr key={document.id} className="border-b border-border last:border-0">
+                                                <td className="py-3 pr-4 font-medium">{document.type_label}</td>
+                                                <td className="py-3 pr-4 text-foreground-muted">v{document.version}</td>
+                                                <td className="py-3 pr-4">
+                                                    {document.generation_status === 'completed' && <span className="badge-success">Siap</span>}
+                                                    {(document.generation_status === 'pending' || document.generation_status === 'processing') && <span className="badge-warning">Diproses…</span>}
+                                                    {document.generation_status === 'failed' && <span className="badge-danger">Gagal</span>}
+                                                </td>
+                                                <td className="py-3 text-right">
+                                                    <Link href={route('documents.show', document.id)} className="btn-secondary">Buka</Link>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </section>
                 </div>
             )}
 

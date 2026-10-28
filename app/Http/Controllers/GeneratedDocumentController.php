@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\AutosaveDocumentRequest;
 use App\Http\Requests\GenerateDocumentRequest;
+use App\Http\Requests\ReorderDocumentSectionsRequest;
 use App\Http\Requests\UpdateGeneratedDocumentRequest;
 use App\Jobs\GenerateDocumentJob;
+use App\Models\DocumentRevision;
 use App\Models\GeneratedDocument;
 use App\Models\JobApplication;
+use App\Services\DocumentEditorService;
 use App\Services\DocumentGenerationService;
+use App\Services\DocumentTemplateRenderer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,7 +21,10 @@ use Inertia\Response;
 
 class GeneratedDocumentController extends Controller
 {
-    public function __construct(private readonly DocumentGenerationService $documents) {}
+    public function __construct(
+        private readonly DocumentGenerationService $documents,
+        private readonly DocumentEditorService $editor,
+    ) {}
 
     /**
      * All documents across the user's applications.
@@ -94,6 +102,16 @@ class GeneratedDocumentController extends Controller
             'sections' => GeneratedDocument::RESUME_SECTIONS,
             'tones' => GeneratedDocument::TONE_LABELS,
             'types' => GeneratedDocument::TYPES,
+            'templates' => GeneratedDocument::TEMPLATES,
+            'revisions' => $document->revisions()->limit(30)->get()->map(fn (DocumentRevision $revision) => [
+                'id' => $revision->id,
+                'source' => $revision->source,
+                'source_label' => $revision->sourceLabel(),
+                'word_count' => $revision->word_count,
+                'created_at' => $revision->created_at,
+            ]),
+            'word_limit' => $this->editor->wordLimit($document),
+            'overflow_warning' => $this->editor->overflowWarning($document),
         ]);
     }
 
@@ -120,6 +138,89 @@ class GeneratedDocumentController extends Controller
     }
 
     /**
+     * Autosave endpoint: JSON in, JSON out, no page reload.
+     */
+    public function autosave(AutosaveDocumentRequest $request, GeneratedDocument $document): JsonResponse
+    {
+        $this->authorize('update', $document);
+
+        $existing = $document->content_json ?? [];
+        $content = [
+            ...$existing,
+            ...$request->validated('content'),
+            'unverified_claims' => $existing['unverified_claims'] ?? [],
+        ];
+
+        if ($request->filled('template_key')) {
+            $document->update(['template_key' => $request->validated('template_key')]);
+        }
+
+        $saved = $this->editor->save(
+            $document,
+            $content,
+            $request->validated('section_order'),
+            DocumentRevision::SOURCE_AUTO,
+        );
+
+        return response()->json([
+            'status' => 'saved',
+            'saved_at' => $saved->last_saved_at?->toIso8601String(),
+            'saved_at_label' => $saved->last_saved_at?->format('H:i'),
+            'word_count' => $saved->word_count,
+            'word_limit' => $this->editor->wordLimit($saved),
+            'overflow_warning' => $this->editor->overflowWarning($saved),
+        ]);
+    }
+
+    /**
+     * Persist the resume section order.
+     */
+    public function reorder(ReorderDocumentSectionsRequest $request, GeneratedDocument $document): RedirectResponse
+    {
+        $this->authorize('update', $document);
+
+        abort_if($document->type !== GeneratedDocument::TYPE_RESUME, 422, 'Urutan bagian hanya untuk CV.');
+
+        $this->editor->save(
+            $document,
+            $document->content_json ?? [],
+            $request->validated('section_order'),
+            DocumentRevision::SOURCE_MANUAL,
+        );
+
+        return back()->with('success', 'Urutan bagian disimpan.');
+    }
+
+    /**
+     * Restore a past revision as a new revision (history is append-only).
+     */
+    public function restore(Request $request, GeneratedDocument $document, DocumentRevision $revision): RedirectResponse
+    {
+        $this->authorize('update', $document);
+
+        abort_unless($revision->generated_document_id === $document->id, 404);
+
+        $this->editor->restore($document, $revision);
+
+        return back()->with('success', 'Versi lama berhasil dipulihkan.');
+    }
+
+    /**
+     * Server-rendered ATS preview (same markup Phase 7 will export).
+     */
+    public function preview(GeneratedDocument $document): \Illuminate\Http\Response
+    {
+        $this->authorize('view', $document);
+
+        $document->load(['jobApplication.careerProfile.contact', 'jobApplication.user']);
+
+        return response(app(DocumentTemplateRenderer::class)->renderPage($document), 200, [
+            'Content-Type' => 'text/html; charset=UTF-8',
+            'X-Frame-Options' => 'SAMEORIGIN',
+        ]);
+    }
+
+    /**
      * Re-run generation for one section (or the whole document when no section is given).
      */
     public function regenerate(Request $request, GeneratedDocument $document): RedirectResponse
@@ -127,20 +228,22 @@ class GeneratedDocumentController extends Controller
         $this->authorize('regenerate', $document);
 
         $section = $request->validate([
-            'section' => ['nullable', 'string', 'in:summary,skills,experiences,projects,education,certifications,languages,opening,body,closing'],
+            'section' => ['nullable', 'string', 'in:summary,skills,experiences,projects,education,certifications,languages,opening,body_paragraphs,closing,recipient_line,signature'],
         ])['section'] ?? null;
 
         $new = $this->documents->queue(
             $document->jobApplication,
             $document->type,
             ['language' => $document->language, 'tone' => $document->tone],
+            parent: $document,
+            section: $section,
         );
 
         GenerateDocumentJob::dispatch($new->id);
 
         $message = $section === null
             ? 'Dokumen baru sedang dibuat.'
-            : "Bagian {$section} sedang dibuat ulang pada versi baru.";
+            : 'Bagian '.$section.' sedang dibuat ulang; bagian lain dipertahankan.';
 
         return redirect()->route('documents.show', $new)->with('success', $message);
     }
@@ -192,6 +295,10 @@ class GeneratedDocumentController extends Controller
             'content' => $document->isCompleted() ? $document->content_json : null,
             'unverified_claims' => $document->unverifiedClaimList(),
             'application_id' => $document->job_application_id,
+            'section_order' => $document->resolvedSectionOrder(),
+            'word_count' => $document->word_count,
+            'last_saved_at' => $document->last_saved_at?->toIso8601String(),
+            'template_key' => $document->template_key,
         ];
     }
 }

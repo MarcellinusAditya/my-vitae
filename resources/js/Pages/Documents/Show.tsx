@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, router, useForm } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { Head, Link, router } from '@inertiajs/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface BulletRow {
     organization?: string;
@@ -38,6 +38,14 @@ interface Content {
     dropped?: number;
 }
 
+interface Revision {
+    id: number;
+    source: string;
+    source_label: string;
+    word_count: number;
+    created_at: string;
+}
+
 interface DocumentPayload {
     id: number;
     type: 'resume' | 'cover_letter';
@@ -53,6 +61,10 @@ interface DocumentPayload {
     content: Content | null;
     unverified_claims: string[];
     application_id: number;
+    section_order: string[];
+    word_count: number;
+    last_saved_at: string | null;
+    template_key: string;
 }
 
 interface ShowProps {
@@ -61,8 +73,14 @@ interface ShowProps {
     sections: Record<string, string>;
     tones: Record<string, string>;
     types: Record<string, string>;
+    templates: Record<string, string>;
+    revisions: Revision[];
+    word_limit: number;
+    overflow_warning: string | null;
     flash?: { success?: string };
 }
+
+type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
 const evidenceLabel = (ref: string): string => {
     const [type, id] = ref.split(':');
@@ -73,12 +91,39 @@ const evidenceLabel = (ref: string): string => {
     return `${labels[type] ?? type} #${id}`;
 };
 
-export default function DocumentShow({ document, application, sections, flash }: ShowProps) {
+const AUTOSAVE_DELAY_MS = 1500;
+
+function xsrfToken(): string {
+    const match = document.cookie.split('; ').find((row) => row.startsWith('XSRF-TOKEN='));
+
+    return match ? decodeURIComponent(match.split('=')[1]) : '';
+}
+
+export default function DocumentShow(props: ShowProps) {
+    const { document, application, sections, templates, revisions, word_limit, overflow_warning, flash } = props;
+
     const [polling, setPolling] = useState(
         document.generation_status === 'pending' || document.generation_status === 'processing',
     );
     const pollingRef = useRef(false);
 
+    const [content, setContent] = useState<Content>(document.content ?? {});
+    const [sectionOrder, setSectionOrder] = useState<string[]>(document.section_order ?? []);
+    const [templateKey, setTemplateKey] = useState<string>(document.template_key ?? 'ats_plain');
+    const [saveState, setSaveState] = useState<SaveState>('idle');
+    const [savedAtLabel, setSavedAtLabel] = useState<string | null>(null);
+    const [wordCount, setWordCount] = useState<number>(document.word_count ?? 0);
+    const [overflow, setOverflow] = useState<string | null>(overflow_warning);
+    const [previewNonce, setPreviewNonce] = useState(0);
+    const [showHistory, setShowHistory] = useState(false);
+
+    const dirtyRef = useRef(false);
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const running = document.generation_status === 'pending' || document.generation_status === 'processing';
+    const isResume = document.type === 'resume';
+
+    // Poll while generation is running.
     useEffect(() => {
         if (!polling || pollingRef.current) return;
         pollingRef.current = true;
@@ -104,12 +149,88 @@ export default function DocumentShow({ document, application, sections, flash }:
         };
     }, [polling, document.id]);
 
-    const running = document.generation_status === 'pending' || document.generation_status === 'processing';
-    const content = document.content;
+    const persist = useCallback(async () => {
+        setSaveState('saving');
 
-    const { data, setData, patch, processing } = useForm<{ content: Content }>({
-        content: content ?? {},
-    });
+        try {
+            const res = await fetch(route('documents.autosave', document.id), {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-XSRF-TOKEN': xsrfToken(),
+                },
+                body: JSON.stringify({
+                    content,
+                    section_order: isResume ? sectionOrder : null,
+                    template_key: templateKey,
+                }),
+            });
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const payload = await res.json();
+            setSaveState('saved');
+            setSavedAtLabel(payload.saved_at_label ?? null);
+            setWordCount(payload.word_count ?? 0);
+            setOverflow(payload.overflow_warning ?? null);
+            dirtyRef.current = false;
+            setPreviewNonce((n) => n + 1);
+        } catch {
+            // Content stays in the editor; the user can retry explicitly.
+            setSaveState('error');
+        }
+    }, [content, document.id, isResume, sectionOrder, templateKey]);
+
+    const scheduleSave = useCallback(() => {
+        dirtyRef.current = true;
+        setSaveState('dirty');
+
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => void persist(), AUTOSAVE_DELAY_MS);
+    }, [persist]);
+
+    // Warn before leaving with unsaved edits.
+    useEffect(() => {
+        const handler = (event: BeforeUnloadEvent) => {
+            if (dirtyRef.current) {
+                event.preventDefault();
+                event.returnValue = '';
+            }
+        };
+
+        window.addEventListener('beforeunload', handler);
+
+        return () => {
+            window.removeEventListener('beforeunload', handler);
+            if (timerRef.current) clearTimeout(timerRef.current);
+        };
+    }, []);
+
+    const updateContent = (patch: Partial<Content>) => {
+        setContent((prev) => ({ ...prev, ...patch }));
+        scheduleSave();
+    };
+
+    const updateExperienceBullet = (index: number, bulletIndex: number, value: string) => {
+        const list = [...(content.experiences ?? [])];
+        const bullets = [...(list[index]?.bullets ?? [])];
+        bullets[bulletIndex] = value;
+        list[index] = { ...list[index], bullets };
+        updateContent({ experiences: list });
+    };
+
+    const moveSection = (index: number, direction: -1 | 1) => {
+        const next = [...sectionOrder];
+        const target = index + direction;
+
+        if (target < 0 || target >= next.length) return;
+
+        [next[index], next[target]] = [next[target], next[index]];
+        setSectionOrder(next);
+        scheduleSave();
+    };
 
     const regenerate = (section: string | null) => {
         router.post(route('documents.regenerate', document.id), section ? { section } : {}, {
@@ -117,19 +238,26 @@ export default function DocumentShow({ document, application, sections, flash }:
         });
     };
 
-    const save = () => {
-        patch(route('documents.update', document.id), { preserveScroll: true });
+    const restore = (revisionId: number) => {
+        if (!window.confirm('Pulihkan versi ini? Isi saat ini akan disimpan sebagai revisi baru.')) return;
+        router.post(route('documents.revisions.restore', [document.id, revisionId]), {}, { preserveScroll: true });
     };
 
-    const updateExperienceBullet = (index: number, bulletIndex: number, value: string) => {
-        const list = [...(data.content.experiences ?? [])];
-        const bullets = [...(list[index]?.bullets ?? [])];
-        bullets[bulletIndex] = value;
-        list[index] = { ...list[index], bullets };
-        setData('content', { ...data.content, experiences: list });
+    const saveLabel: Record<SaveState, string> = {
+        idle: 'Tersimpan',
+        dirty: 'Belum disimpan…',
+        saving: 'Menyimpan…',
+        saved: savedAtLabel ? `Tersimpan ${savedAtLabel}` : 'Tersimpan',
+        error: 'Gagal menyimpan — coba lagi',
     };
 
-    const isResume = document.type === 'resume';
+    const saveTone: Record<SaveState, string> = {
+        idle: 'text-foreground-subtle',
+        dirty: 'text-warning',
+        saving: 'text-foreground-muted',
+        saved: 'text-success',
+        error: 'text-danger',
+    };
 
     return (
         <AuthenticatedLayout
@@ -142,7 +270,15 @@ export default function DocumentShow({ document, application, sections, flash }:
                             {document.tone && ` · ${document.tone}`}
                         </p>
                     </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        <span className={`text-caption ${saveTone[saveState]}`} role="status" aria-live="polite">
+                            {saveLabel[saveState]}
+                        </span>
+                        {saveState === 'error' && (
+                            <button type="button" className="btn-secondary" onClick={() => void persist()}>
+                                Coba simpan lagi
+                            </button>
+                        )}
                         <Link href={route('applications.show', application.id)} className="btn-secondary">Lamaran</Link>
                         <Link href={route('documents.index')} className="btn-secondary">Semua dokumen</Link>
                     </div>
@@ -183,7 +319,7 @@ export default function DocumentShow({ document, application, sections, flash }:
                 </section>
             )}
 
-            {document.generation_status === 'completed' && content && (
+            {document.generation_status === 'completed' && (
                 <>
                     {document.unverified_claims.length > 0 && (
                         <section className="card mb-6 border-warning bg-warning-soft p-4 sm:p-5">
@@ -199,246 +335,265 @@ export default function DocumentShow({ document, application, sections, flash }:
                         </section>
                     )}
 
-                    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-                        {/* Document body */}
+                    {overflow && (
+                        <section className="card mb-6 border-warning bg-warning-soft p-4 sm:p-5">
+                            <p className="text-small text-warning">{overflow}</p>
+                        </section>
+                    )}
+
+                    <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
+                        {/* Editor */}
                         <div className="space-y-6">
+                            {isResume && (
+                                <section className="card p-5 sm:p-6">
+                                    <h2 className="text-h3">Urutan bagian</h2>
+                                    <p className="mt-0.5 text-small text-foreground-muted">
+                                        Urutan ini dipakai di preview dan saat ekspor nanti.
+                                    </p>
+                                    <ul className="mt-3 space-y-2">
+                                        {sectionOrder.map((section, index) => (
+                                            <li
+                                                key={section}
+                                                className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface-muted px-3 py-2"
+                                            >
+                                                <span className="text-small">{sections[section] ?? section}</span>
+                                                <span className="flex gap-1">
+                                                    <button
+                                                        type="button"
+                                                        className="btn-secondary px-2 py-1"
+                                                        onClick={() => moveSection(index, -1)}
+                                                        disabled={index === 0}
+                                                        aria-label={`Naikkan ${sections[section] ?? section}`}
+                                                    >
+                                                        ↑
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="btn-secondary px-2 py-1"
+                                                        onClick={() => moveSection(index, 1)}
+                                                        disabled={index === sectionOrder.length - 1}
+                                                        aria-label={`Turunkan ${sections[section] ?? section}`}
+                                                    >
+                                                        ↓
+                                                    </button>
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </section>
+                            )}
+
                             {isResume ? (
                                 <>
                                     <section className="card p-5 sm:p-6">
                                         <div className="flex items-center justify-between gap-3">
-                                            <h2 className="text-h3">Ringkasan</h2>
+                                            <h2 className="text-h3">{sections.summary}</h2>
                                             <button type="button" className="btn-ghost text-caption" onClick={() => regenerate('summary')}>
-                                                Regenerate bagian
+                                                Regenerate
                                             </button>
                                         </div>
                                         <textarea
                                             rows={4}
                                             className="field-input mt-3"
-                                            value={data.content.summary ?? ''}
-                                            onChange={(e) => setData('content', { ...data.content, summary: e.target.value })}
+                                            value={content.summary ?? ''}
+                                            onChange={(e) => updateContent({ summary: e.target.value })}
                                         />
                                     </section>
 
-                                    {(data.content.experiences ?? []).length > 0 && (
-                                        <section className="card p-5 sm:p-6">
-                                            <div className="flex items-center justify-between gap-3">
-                                                <h2 className="text-h3">Pengalaman</h2>
-                                                <button type="button" className="btn-ghost text-caption" onClick={() => regenerate('experiences')}>
-                                                    Regenerate bagian
-                                                </button>
-                                            </div>
-                                            <div className="mt-4 space-y-4">
-                                                {(data.content.experiences ?? []).map((experience, index) => (
-                                                    <div key={`${experience.organization}-${index}`} className="rounded-xl border border-border bg-surface-muted p-4">
-                                                        <p className="text-h3">{experience.role}</p>
-                                                        <p className="text-small text-foreground-muted">
-                                                            {experience.organization}
-                                                            {' · '}
-                                                            {experience.start_date ?? '?'} – {experience.is_current ? 'sekarang' : (experience.end_date ?? '?')}
-                                                        </p>
-                                                        <div className="mt-3 space-y-2">
-                                                            {(experience.bullets ?? []).map((bullet, bulletIndex) => (
-                                                                <textarea
-                                                                    key={bulletIndex}
-                                                                    rows={2}
-                                                                    className="field-input"
-                                                                    value={bullet}
-                                                                    onChange={(e) => updateExperienceBullet(index, bulletIndex, e.target.value)}
-                                                                />
+                                    <section className="card p-5 sm:p-6">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <h2 className="text-h3">{sections.experiences}</h2>
+                                            <button type="button" className="btn-ghost text-caption" onClick={() => regenerate('experiences')}>
+                                                Regenerate
+                                            </button>
+                                        </div>
+                                        <div className="mt-4 space-y-4">
+                                            {(content.experiences ?? []).map((experience, index) => (
+                                                <div key={`${experience.organization}-${index}`} className="rounded-xl border border-border bg-surface-muted p-4">
+                                                    <p className="text-h3">{experience.role}</p>
+                                                    <p className="text-small text-foreground-muted">
+                                                        {experience.organization} · {experience.start_date ?? '?'} –{' '}
+                                                        {experience.is_current ? 'sekarang' : (experience.end_date ?? '?')}
+                                                    </p>
+                                                    <div className="mt-3 space-y-2">
+                                                        {(experience.bullets ?? []).map((bullet, bulletIndex) => (
+                                                            <textarea
+                                                                key={bulletIndex}
+                                                                rows={2}
+                                                                className="field-input"
+                                                                value={bullet}
+                                                                onChange={(e) => updateExperienceBullet(index, bulletIndex, e.target.value)}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                    {(experience.evidence_refs ?? []).length > 0 && (
+                                                        <div className="mt-2 flex flex-wrap gap-1.5">
+                                                            {(experience.evidence_refs ?? []).map((ref) => (
+                                                                <span key={ref} className="badge-neutral">{evidenceLabel(ref)}</span>
                                                             ))}
                                                         </div>
-                                                        {(experience.evidence_refs ?? []).length > 0 && (
-                                                            <div className="mt-2 flex flex-wrap gap-1.5">
-                                                                {(experience.evidence_refs ?? []).map((ref) => (
-                                                                    <span key={ref} className="badge-neutral">{evidenceLabel(ref)}</span>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </section>
-                                    )}
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </section>
 
-                                    {(data.content.skills ?? []).length > 0 && (
+                                    {(content.skills ?? []).length > 0 && (
                                         <section className="card p-5 sm:p-6">
-                                            <h2 className="text-h3">Skill</h2>
+                                            <h2 className="text-h3">{sections.skills}</h2>
                                             <div className="mt-3 flex flex-wrap gap-2">
-                                                {(data.content.skills ?? []).map((skill, index) => (
+                                                {(content.skills ?? []).map((skill, index) => (
                                                     <span key={`${skill.name}-${index}`} className="badge-neutral">{skill.name}</span>
                                                 ))}
                                             </div>
                                         </section>
                                     )}
-
-                                    {(data.content.projects ?? []).length > 0 && (
-                                        <section className="card p-5 sm:p-6">
-                                            <h2 className="text-h3">Proyek</h2>
-                                            <div className="mt-3 space-y-3">
-                                                {(data.content.projects ?? []).map((project, index) => (
-                                                    <div key={`${project.name}-${index}`}>
-                                                        <p className="text-h3">{project.name}</p>
-                                                        {(project.bullets ?? []).map((bullet, bulletIndex) => (
-                                                            <p key={bulletIndex} className="mt-1 text-small text-foreground-muted">• {bullet}</p>
-                                                        ))}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </section>
-                                    )}
-
-                                    {(data.content.education ?? []).length > 0 && (
-                                        <section className="card p-5 sm:p-6">
-                                            <h2 className="text-h3">Pendidikan</h2>
-                                            <ul className="mt-3 space-y-2 text-small">
-                                                {(data.content.education ?? []).map((education, index) => (
-                                                    <li key={`${education.institution}-${index}`}>
-                                                        <span className="font-medium">{education.institution}</span>
-                                                        {education.degree ? ` — ${education.degree}` : ''}
-                                                        {education.field_of_study ? ` (${education.field_of_study})` : ''}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </section>
-                                    )}
-
-                                    {(data.content.certifications ?? []).length > 0 && (
-                                        <section className="card p-5 sm:p-6">
-                                            <h2 className="text-h3">Sertifikasi</h2>
-                                            <ul className="mt-3 space-y-2 text-small">
-                                                {(data.content.certifications ?? []).map((certification, index) => (
-                                                    <li key={`${certification.name}-${index}`}>
-                                                        <span className="font-medium">{certification.name}</span>
-                                                        {certification.issuer ? ` — ${certification.issuer}` : ''}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </section>
-                                    )}
-
-                                    {(data.content.languages ?? []).length > 0 && (
-                                        <section className="card p-5 sm:p-6">
-                                            <h2 className="text-h3">Bahasa</h2>
-                                            <p className="mt-2 text-small text-foreground-muted">{(data.content.languages ?? []).join(', ')}</p>
-                                        </section>
-                                    )}
                                 </>
                             ) : (
-                                <>
-                                    <section className="card p-5 sm:p-6">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <h2 className="text-h3">Surat</h2>
-                                            <button type="button" className="btn-ghost text-caption" onClick={() => regenerate(null)}>
-                                                Regenerate surat
-                                            </button>
+                                <section className="card p-5 sm:p-6">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <h2 className="text-h3">Surat</h2>
+                                        <button type="button" className="btn-ghost text-caption" onClick={() => regenerate(null)}>
+                                            Regenerate surat
+                                        </button>
+                                    </div>
+
+                                    <div className="mt-4 space-y-4">
+                                        <label className="block">
+                                            <span className="field-label">Sapaan</span>
+                                            <input
+                                                className="field-input"
+                                                value={content.recipient_line ?? ''}
+                                                onChange={(e) => updateContent({ recipient_line: e.target.value })}
+                                            />
+                                        </label>
+
+                                        <label className="block">
+                                            <span className="field-label">Pembuka</span>
+                                            <textarea
+                                                rows={3}
+                                                className="field-input"
+                                                value={content.opening ?? ''}
+                                                onChange={(e) => updateContent({ opening: e.target.value })}
+                                            />
+                                        </label>
+
+                                        <div className="space-y-3">
+                                            <span className="field-label">Isi</span>
+                                            {(content.body_paragraphs ?? []).map((paragraph, index) => (
+                                                <textarea
+                                                    key={index}
+                                                    rows={4}
+                                                    className="field-input"
+                                                    value={paragraph.text}
+                                                    onChange={(e) => {
+                                                        const list = [...(content.body_paragraphs ?? [])];
+                                                        list[index] = { ...list[index], text: e.target.value };
+                                                        updateContent({ body_paragraphs: list });
+                                                    }}
+                                                />
+                                            ))}
                                         </div>
 
-                                        <div className="mt-4 space-y-4">
-                                            <label className="block">
-                                                <span className="field-label">Sapaan</span>
-                                                <input
-                                                    className="field-input"
-                                                    value={data.content.recipient_line ?? ''}
-                                                    onChange={(e) => setData('content', { ...data.content, recipient_line: e.target.value })}
-                                                />
-                                            </label>
+                                        <label className="block">
+                                            <span className="field-label">Penutup</span>
+                                            <textarea
+                                                rows={3}
+                                                className="field-input"
+                                                value={content.closing ?? ''}
+                                                onChange={(e) => updateContent({ closing: e.target.value })}
+                                            />
+                                        </label>
 
-                                            <label className="block">
-                                                <span className="field-label">Pembuka</span>
-                                                <textarea
-                                                    rows={3}
-                                                    className="field-input"
-                                                    value={data.content.opening ?? ''}
-                                                    onChange={(e) => setData('content', { ...data.content, opening: e.target.value })}
-                                                />
-                                            </label>
-
-                                            <div className="space-y-3">
-                                                <span className="field-label">Isi</span>
-                                                {(data.content.body_paragraphs ?? []).map((paragraph, index) => (
-                                                    <textarea
-                                                        key={index}
-                                                        rows={4}
-                                                        className="field-input"
-                                                        value={paragraph.text}
-                                                        onChange={(e) => {
-                                                            const list = [...(data.content.body_paragraphs ?? [])];
-                                                            list[index] = { ...list[index], text: e.target.value };
-                                                            setData('content', { ...data.content, body_paragraphs: list });
-                                                        }}
-                                                    />
-                                                ))}
-                                            </div>
-
-                                            <label className="block">
-                                                <span className="field-label">Penutup</span>
-                                                <textarea
-                                                    rows={3}
-                                                    className="field-input"
-                                                    value={data.content.closing ?? ''}
-                                                    onChange={(e) => setData('content', { ...data.content, closing: e.target.value })}
-                                                />
-                                            </label>
-
-                                            <label className="block">
-                                                <span className="field-label">Tanda tangan</span>
-                                                <input
-                                                    className="field-input"
-                                                    value={data.content.signature ?? ''}
-                                                    onChange={(e) => setData('content', { ...data.content, signature: e.target.value })}
-                                                />
-                                            </label>
-                                        </div>
-                                    </section>
-                                </>
+                                        <label className="block">
+                                            <span className="field-label">Tanda tangan</span>
+                                            <input
+                                                className="field-input"
+                                                value={content.signature ?? ''}
+                                                onChange={(e) => updateContent({ signature: e.target.value })}
+                                            />
+                                        </label>
+                                    </div>
+                                </section>
                             )}
                         </div>
 
-                        {/* Sidebar */}
+                        {/* Preview + history */}
                         <aside className="space-y-4">
                             <section className="card p-4 sm:p-5">
-                                <h2 className="text-h3">Info</h2>
-                                <dl className="mt-3 space-y-2 text-small">
-                                    <div className="flex justify-between gap-3">
-                                        <dt className="text-foreground-muted">Versi</dt>
-                                        <dd>v{document.version}</dd>
-                                    </div>
-                                    <div className="flex justify-between gap-3">
-                                        <dt className="text-foreground-muted">Bahasa</dt>
-                                        <dd>{document.language === 'en' ? 'English' : 'Indonesia'}</dd>
-                                    </div>
-                                    <div className="flex justify-between gap-3">
-                                        <dt className="text-foreground-muted">Model</dt>
-                                        <dd className="max-w-[60%] truncate text-right">{document.model_name ?? '—'}</dd>
-                                    </div>
-                                    {content.prompt_version && (
-                                        <div className="flex justify-between gap-3">
-                                            <dt className="text-foreground-muted">Prompt</dt>
-                                            <dd>{content.prompt_version}</dd>
-                                        </div>
-                                    )}
-                                    {typeof content.dropped === 'number' && content.dropped > 0 && (
-                                        <div className="flex justify-between gap-3">
-                                            <dt className="text-foreground-muted">Klaim dibuang</dt>
-                                            <dd>{content.dropped}</dd>
-                                        </div>
-                                    )}
-                                </dl>
+                                <div className="flex items-center justify-between gap-2">
+                                    <h2 className="text-h3">Preview</h2>
+                                    <select
+                                        className="field-input w-auto py-1 text-caption"
+                                        value={templateKey}
+                                        onChange={(e) => {
+                                            setTemplateKey(e.target.value);
+                                            scheduleSave();
+                                        }}
+                                        aria-label="Template"
+                                    >
+                                        {Object.entries(templates).map(([value, label]) => (
+                                            <option key={value} value={value}>{label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <p className="mt-1 text-caption text-foreground-subtle">
+                                    {wordCount} kata · batas nyaman {word_limit}
+                                </p>
+
+                                <iframe
+                                    key={previewNonce}
+                                    title="Preview dokumen"
+                                    src={`${route('documents.preview', document.id)}?v=${previewNonce}`}
+                                    className="mt-3 h-[520px] w-full rounded-lg border border-border bg-white"
+                                />
                             </section>
 
                             <section className="card p-4 sm:p-5">
-                                <h2 className="text-h3">Aksi</h2>
-                                <div className="mt-3 space-y-2">
-                                    <button type="button" className="btn-primary w-full" onClick={save} disabled={processing}>
-                                        {processing ? 'Menyimpan…' : 'Simpan perubahan'}
-                                    </button>
-                                    <button type="button" className="btn-secondary w-full" onClick={() => regenerate(null)} disabled={running}>
-                                        Versi baru (regenerate)
+                                <div className="flex items-center justify-between gap-2">
+                                    <h2 className="text-h3">Riwayat versi</h2>
+                                    <button type="button" className="btn-ghost text-caption" onClick={() => setShowHistory((v) => !v)}>
+                                        {showHistory ? 'Sembunyikan' : 'Lihat'}
                                     </button>
                                 </div>
-                                <p className="mt-3 text-caption text-foreground-subtle">
-                                    Regenerate membuat versi baru; versi lama tetap tersimpan.
-                                </p>
+
+                                {showHistory && (
+                                    <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+                                        {revisions.length === 0 && (
+                                            <li className="text-small text-foreground-muted">Belum ada revisi tersimpan.</li>
+                                        )}
+                                        {revisions.map((revision) => (
+                                            <li key={revision.id} className="rounded-lg border border-border px-3 py-2">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-caption text-foreground-muted">
+                                                        {new Date(revision.created_at).toLocaleString('id-ID')}
+                                                    </span>
+                                                    <span className="badge-neutral">{revision.source_label}</span>
+                                                </div>
+                                                <div className="mt-1 flex items-center justify-between gap-2">
+                                                    <span className="text-caption text-foreground-subtle">{revision.word_count} kata</span>
+                                                    <button
+                                                        type="button"
+                                                        className="btn-secondary px-2 py-1 text-caption"
+                                                        onClick={() => restore(revision.id)}
+                                                    >
+                                                        Pulihkan
+                                                    </button>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+
+                                <button
+                                    type="button"
+                                    className="btn-secondary mt-3 w-full"
+                                    onClick={() => regenerate(null)}
+                                    disabled={running}
+                                >
+                                    Versi baru (generate ulang penuh)
+                                </button>
                             </section>
                         </aside>
                     </div>

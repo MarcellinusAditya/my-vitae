@@ -73,17 +73,15 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 
 ## 4. Kondisi implementasi saat ini
 
-(Section ini menggambarkan kondisi per Phase 5. Lihat bagian bawah untuk catatan Phase 1–5.)
+(Section ini menggambarkan kondisi per Phase 6. Lihat bagian bawah untuk catatan Phase 1–6.)
 
-- Model: `User`, `CareerProfile` + 6 section profil, `ProfileDocument` (P3), `JobApplication`, `JobRequirementAnalysis` (P4), `GeneratedDocument`, `AiUsageLog` (P5).
+- Model: `User`, `CareerProfile` + 6 section profil, `ProfileDocument` (P3), `JobApplication`, `JobRequirementAnalysis` (P4), `GeneratedDocument`, `AiUsageLog` (P5), `DocumentRevision` (P6).
 - Controller: `Auth/*`, `ProfileController`, `CareerProfileController`, 6 section controller, `ProfileDocumentController`, `JobApplicationController`, `GeneratedDocumentController`.
-- Policy: `CareerProfilePolicy`, `ProfileDocumentPolicy`, `JobApplicationPolicy`, `GeneratedDocumentPolicy`.
-- Service: `CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`, `JobApplicationService`, `ProfileSnapshotService`, `DocumentGenerationService`, `Ai\*`.
+- Service: `CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`, `JobApplicationService`, `ProfileSnapshotService`, `DocumentGenerationService`, `DocumentEditorService`, `DocumentTemplateRenderer`, `Ai\*`.
 - Job: `ExtractCvDocumentJob`, `AnalyzeJobApplicationJob`, `GenerateDocumentJob`.
-- Migration: 16 tabel domain (7 profil, `profile_documents`, `job_applications`, `job_requirement_analyses`, `generated_documents`, `ai_usage_logs`) + tabel framework.
 - Halaman: `Welcome`, `Dashboard`, auth, profile, `CareerProfile/Index`, `CareerProfile/Import/*`, `Applications/*`, `Documents/*`.
 
-## 4a. Catatan Phase 1–5
+## 4a. Catatan Phase 1–6
 
 ### Phase 1 — fondasi UI
 - Design tokens di `tailwind.config.js` + `resources/css/app.css` (`btn-*`, `card`, `field-*`, `badge-*`), `AuthenticatedLayout` (sidebar + mobile drawer), `GuestLayout` disamakan, landing page produk.
@@ -126,6 +124,17 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 - **UI:** `Documents/Index` (semua dokumen, filter tipe, badge jumlah klaim perlu dicek), `Documents/Show` (editor per bagian + badge bukti per pengalaman + tombol regenerate per bagian/versi baru), tab **Dokumen** di halaman lamaran (tombol Buat CV / Cover Letter, disabled sampai analisis selesai).
 - **Prasyarat:** generate butuh analisis job-fit `completed` → kalau belum, status `analysis_required`.
 - Test: `DocumentFactValidatorTest` (8 tc) + `DocumentGenerationTest` (10 tc).
+
+### Phase 6 — document editor & ATS templates
+- **Skema:** `generated_documents` + `section_order` (JSON), `word_count`, `last_saved_at`, `parent_version_id`; tabel baru `document_revisions` (append-only: `content_json`, `section_order`, `word_count`, `source`).
+- **Autosave (`DocumentEditorService` + `PATCH /documents/{document}/autosave`)**: endpoint JSON (bukan Inertia redirect) supaya UI bisa menampilkan status `Belum disimpan → Menyimpan → Tersimpan HH:MM → Gagal (retry)`. Debounce 1,5 s di klien, plus `beforeunload` guard saat ada perubahan belum tersimpan. Konten **tidak** dihapus saat save gagal.
+- **Revisi:** setiap tulis membuat baris revisi. `SOURCE_GENERATED` (hasil AI pertama, dibuat oleh job), `AUTO`, `MANUAL`, `RESTORE`. Autosave identik berturut-turut di-dedupe; autosave lama dipangkas ke 20 per dokumen — revisi manual/restore **tidak** pernah dipangkas.
+- **Restore** menulis ulang konten lama sebagai revisi baru bertanda `restore` (append-only, tidak ada data hilang). Revisi milik dokumen lain → 404.
+- **Urutan bagian** per dokumen (`section_order`); `resolvedSectionOrder()` menambahkan section yang hilang di akhir sehingga dokumen lama tetap render utuh. Reorder via tombol ↑/↓ (aksesibilitas keyboard, andal di 360px).
+- **Template & preview:** `DocumentTemplateRenderer` merender HTML satu kolom dengan heading standar (`RINGKASAN`/`SUMMARY`, dst.), tanpa `<table>`/`<img>`/`<svg>`, output di-escape. Dipakai endpoint `GET /documents/{document}/preview` (iframe) dan **akan dipakai ulang untuk PDF/DOCX di Phase 7** — satu sumber layout. Template: `ats_plain`, `ats_compact` (beda tipografi saja).
+- **Validasi panjang:** `word_count` + batas lunak (CV ringkas 700 / detail 1200, cover letter 450) → `overflow_warning` (peringatan, bukan blokir).
+- **Regenerate per bagian benar-benar per bagian:** `section` diteruskan ke job; job mengambil `_parent_content`, mengganti hanya section itu, membuang key internal sebelum simpan. Tanpa `section` → versi penuh.
+- Test: `DocumentEditorTest` (11 tc) + `DocumentPreviewTest` (7 tc).
 
 ## 5. Risiko terbuka
 

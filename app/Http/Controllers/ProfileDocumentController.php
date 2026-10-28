@@ -9,7 +9,6 @@ use App\Jobs\ExtractCvDocumentJob;
 use App\Models\ProfileDocument;
 use App\Services\CareerProfileService;
 use App\Services\CvProfileMergeService;
-use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,7 +21,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class ProfileDocumentController extends Controller
 {
     use AuthorizesProfileSection;
-    use AuthorizesRequests;
 
     public function __construct(
         private readonly CareerProfileService $profiles,

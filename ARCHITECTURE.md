@@ -73,16 +73,17 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 
 ## 4. Kondisi implementasi saat ini
 
-(Section ini menggambarkan kondisi per Phase 4. Lihat bagian bawah untuk catatan Phase 1–4.)
+(Section ini menggambarkan kondisi per Phase 5. Lihat bagian bawah untuk catatan Phase 1–5.)
 
-- Model: `User`, `CareerProfile` + 6 section profil, `ProfileDocument` (Phase 3), `JobApplication`, `JobRequirementAnalysis` (Phase 4).
-- Controller: `Auth/*` (Breeze), `ProfileController`, `CareerProfileController`, 6 section controller, `ProfileDocumentController`, `JobApplicationController` (Phase 4).
-- Policy: `CareerProfilePolicy`, `ProfileDocumentPolicy`, `JobApplicationPolicy`. Service: `CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`, `JobApplicationService`, `ProfileSnapshotService`, `Ai\*`.
-- Job: `ExtractCvDocumentJob`, `AnalyzeJobApplicationJob` (queue `database`, timeout 300s).
-- Migration: `users`, `cache`, `jobs`, 7 tabel profil, `profile_documents`, `job_applications`, `job_requirement_analyses`.
-- Halaman: `Welcome`, `Dashboard`, auth, profile, `CareerProfile/Index`, `CareerProfile/Import/{Index,Review}`, `Applications/{Index,Create,Edit,Show}`.
+- Model: `User`, `CareerProfile` + 6 section profil, `ProfileDocument` (P3), `JobApplication`, `JobRequirementAnalysis` (P4), `GeneratedDocument`, `AiUsageLog` (P5).
+- Controller: `Auth/*`, `ProfileController`, `CareerProfileController`, 6 section controller, `ProfileDocumentController`, `JobApplicationController`, `GeneratedDocumentController`.
+- Policy: `CareerProfilePolicy`, `ProfileDocumentPolicy`, `JobApplicationPolicy`, `GeneratedDocumentPolicy`.
+- Service: `CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`, `JobApplicationService`, `ProfileSnapshotService`, `DocumentGenerationService`, `Ai\*`.
+- Job: `ExtractCvDocumentJob`, `AnalyzeJobApplicationJob`, `GenerateDocumentJob`.
+- Migration: 16 tabel domain (7 profil, `profile_documents`, `job_applications`, `job_requirement_analyses`, `generated_documents`, `ai_usage_logs`) + tabel framework.
+- Halaman: `Welcome`, `Dashboard`, auth, profile, `CareerProfile/Index`, `CareerProfile/Import/*`, `Applications/*`, `Documents/*`.
 
-## 4a. Catatan Phase 1–4
+## 4a. Catatan Phase 1–5
 
 ### Phase 1 — fondasi UI
 - Design tokens di `tailwind.config.js` + `resources/css/app.css` (`btn-*`, `card`, `field-*`, `badge-*`), `AuthenticatedLayout` (sidebar + mobile drawer), `GuestLayout` disamakan, landing page produk.
@@ -112,6 +113,20 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 - **Catatan implementasi:** hindari `latestOfMany()` untuk daftar (kolom ambigu saat select terbatas) — gunakan `analyses()->first()` (`analyses()` sudah `latest('id')`).
 - Test: `JobApplicationTest` (12 tc) + `JobFitAnalysisTest` (7 tc) + `JobFitAnalysisValidatorTest` (7 tc).
 
+### Phase 5 — AI CV & cover letter generation
+- **Skema:** `generated_documents` (type resume/cover_letter, version naik per generate, `content_json`, `job_requirement_analysis_id` sebagai konteks, status/error) + `ai_usage_logs` (operation, provider, model, token, durasi, status — **tanpa prompt/PII**).
+- **Provider:** `DocumentGenerationProvider` → `OpenAiCompatibleDocumentGeneration` (prompt `v2`, tersimpan di `content_json.prompt_version`). Dua operasi: resume & cover letter; analisis job-fit disuntik sebagai prioritas target.
+- **GUARDRAIL FAKTA (`DocumentFactValidator`) — inti fase ini:**
+  1. **Drop keras** — baris dengan `organization`/`role` (atau institution/project/certification name) yang tidak ada di snapshot dibuang; model tidak bisa mengarang perusahaan/jabatan. Tanggal SELALU diambil dari snapshot, bukan dari model.
+  2. **Skill tanpa bukti** dibuang (bukan diisi `skill:` palsu).
+  3. **Flag metrik** — angka di bullet/paragraf yang tidak muncul di teks profil masuk `unverified_claims` dan ditampilkan ke user (bukan dihapus diam-diam).
+  4. **Cover letter** — sapaan dipaksa netral (`Kepada Tim Rekrutmen,` / `Dear Hiring Manager,`) bila nama penerima tidak diberikan atau model mengarang nama.
+  - Job memanggil validator **dua kali** (provider + job) sebagai defense-in-depth.
+- **Versi:** regenerate membuat row baru dengan `version+1`; versi lama tidak disentuh. Edit manual menyimpan ke versi aktif dan **mempertahankan** `unverified_claims` sebagai metadata.
+- **UI:** `Documents/Index` (semua dokumen, filter tipe, badge jumlah klaim perlu dicek), `Documents/Show` (editor per bagian + badge bukti per pengalaman + tombol regenerate per bagian/versi baru), tab **Dokumen** di halaman lamaran (tombol Buat CV / Cover Letter, disabled sampai analisis selesai).
+- **Prasyarat:** generate butuh analisis job-fit `completed` → kalau belum, status `analysis_required`.
+- Test: `DocumentFactValidatorTest` (8 tc) + `DocumentGenerationTest` (10 tc).
+
 ## 5. Risiko terbuka
 
 | Risiko | Dampak | Rencana |
@@ -122,3 +137,6 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 | AI usage/rate-limit belum dibatasi | Biaya tak terkontrol saat banyak impor/analisis | Phase 5/8 (§4.10 PROJECT_PLAN) |
 | PDF scan tanpa OCR | Import gagal dengan pesan jelas | OCR = Phase 9; saat ini `no_text` by design |
 | Analisis memakai model yang sama dengan ekstraksi | Kualitas job-fit bergantung `OPENAI_MODEL` | Ganti model cukup lewat env; prompt terpisah per operasi |
+| Metrik tanpa bukti tetap tersimpan (hanya di-flag) | User bisa lupa menghapus klaim | Badge `unverified_claims` di UI; ekspor (P7) harus memblokir/metandai |
+| Regenerate per bagian masih membuat versi penuh | Boros token, versi menumpuk | Phase 6 (version history proper) / optimasi nanti |
+| Belum ada kuota AI per user | Biaya tak terkontrol | `ai_usage_logs` sudah mencatat; enforcement di Phase 8 |

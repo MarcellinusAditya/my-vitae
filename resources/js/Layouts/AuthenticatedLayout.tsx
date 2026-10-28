@@ -47,9 +47,8 @@ const navigation: NavItem[] = [
     },
     {
         label: 'Documents',
+        routeName: 'documents.index',
         icon: icon('M7 21h10a2 2 0 002-2V7l-4-4H7a2 2 0 00-2 2v14a2 2 0 002 2z'),
-        disabled: true,
-        soon: true,
     },
 ];
 

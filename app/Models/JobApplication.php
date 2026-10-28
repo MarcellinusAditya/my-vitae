@@ -63,6 +63,19 @@ class JobApplication extends Model
         return $this->hasMany(JobRequirementAnalysis::class)->latest('id');
     }
 
+    public function generatedDocuments(): HasMany
+    {
+        return $this->hasMany(GeneratedDocument::class)->latest('id');
+    }
+
+    /**
+     * Latest generation run of a given type.
+     */
+    public function latestDocument(string $type): ?GeneratedDocument
+    {
+        return $this->generatedDocuments()->where('type', $type)->first();
+    }
+
     public function statusLabel(): string
     {
         return self::STATUSES[$this->status] ?? $this->status;

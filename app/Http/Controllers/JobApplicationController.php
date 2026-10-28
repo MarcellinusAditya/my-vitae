@@ -5,11 +5,11 @@ namespace App\Http\Controllers;
 use App\Http\Requests\JobApplicationRequest;
 use App\Http\Requests\UpdateJobStatusRequest;
 use App\Jobs\AnalyzeJobApplicationJob;
+use App\Models\GeneratedDocument;
 use App\Models\JobApplication;
 use App\Models\JobRequirementAnalysis;
 use App\Services\CareerProfileService;
 use App\Services\JobApplicationService;
-use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,8 +18,6 @@ use Inertia\Response;
 
 class JobApplicationController extends Controller
 {
-    use AuthorizesRequests;
-
     public function __construct(
         private readonly CareerProfileService $profiles,
         private readonly JobApplicationService $applications,
@@ -107,6 +105,15 @@ class JobApplicationController extends Controller
                 'status_label' => $application->statusLabel(),
                 'created_at' => $application->created_at,
                 'updated_at' => $application->updated_at,
+                'documents' => $application->generatedDocuments()
+                    ->get()
+                    ->map(fn (GeneratedDocument $document) => [
+                        'id' => $document->id,
+                        'type' => $document->type,
+                        'type_label' => $document->typeLabel(),
+                        'version' => $document->version,
+                        'generation_status' => $document->generation_status,
+                    ]),
             ],
             'analysis' => $analysis === null ? null : [
                 'id' => $analysis->id,

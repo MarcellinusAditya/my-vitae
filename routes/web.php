@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CareerProfileController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\GeneratedDocumentController;
 use App\Http\Controllers\JobApplicationController;
 use App\Http\Controllers\ProfileCertificationController;
 use App\Http\Controllers\ProfileContactController;
@@ -81,6 +82,15 @@ Route::middleware('auth')->group(function () {
     Route::get('/applications/{application}/analysis-status', [JobApplicationController::class, 'analysisStatus'])->name('applications.analysis.status');
     Route::post('/applications/{application}/duplicate', [JobApplicationController::class, 'duplicate'])->name('applications.duplicate');
     Route::delete('/applications/{application}', [JobApplicationController::class, 'destroy'])->name('applications.destroy');
+
+    // Generated documents
+    Route::get('/documents', [GeneratedDocumentController::class, 'index'])->name('documents.index');
+    Route::post('/applications/{application}/documents', [GeneratedDocumentController::class, 'store'])->name('documents.store');
+    Route::get('/documents/{document}', [GeneratedDocumentController::class, 'show'])->name('documents.show');
+    Route::patch('/documents/{document}', [GeneratedDocumentController::class, 'update'])->name('documents.update');
+    Route::post('/documents/{document}/regenerate', [GeneratedDocumentController::class, 'regenerate'])->name('documents.regenerate');
+    Route::get('/documents/{document}/status', [GeneratedDocumentController::class, 'status'])->name('documents.status');
+    Route::delete('/documents/{document}', [GeneratedDocumentController::class, 'destroy'])->name('documents.destroy');
 });
 
 require __DIR__.'/auth.php';

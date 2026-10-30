@@ -10,6 +10,7 @@ use App\Models\JobApplication;
 use App\Models\JobRequirementAnalysis;
 use App\Services\CareerProfileService;
 use App\Services\JobApplicationService;
+use App\Services\UserDataCleanupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -210,11 +211,11 @@ class JobApplicationController extends Controller
             ->with('success', 'Lamaran diduplikasi sebagai draft baru.');
     }
 
-    public function destroy(JobApplication $application): RedirectResponse
+    public function destroy(Request $request, JobApplication $application): RedirectResponse
     {
         $this->authorize('delete', $application);
 
-        $application->delete();
+        app(UserDataCleanupService::class)->deleteApplication($application);
 
         return redirect()
             ->route('applications.index')

@@ -7,6 +7,7 @@ use App\Http\Requests\GenerateDocumentRequest;
 use App\Http\Requests\ReorderDocumentSectionsRequest;
 use App\Http\Requests\UpdateGeneratedDocumentRequest;
 use App\Jobs\GenerateDocumentJob;
+use App\Models\DocumentExport;
 use App\Models\DocumentRevision;
 use App\Models\GeneratedDocument;
 use App\Models\JobApplication;
@@ -112,6 +113,16 @@ class GeneratedDocumentController extends Controller
             ]),
             'word_limit' => $this->editor->wordLimit($document),
             'overflow_warning' => $this->editor->overflowWarning($document),
+            'exports' => $document->exports()->limit(20)->get()->map(fn (DocumentExport $export) => [
+                'id' => $export->id,
+                'format' => $export->format,
+                'format_label' => $export->formatLabel(),
+                'filename' => $export->filename,
+                'file_size' => $export->file_size,
+                'status' => $export->status,
+                'created_at' => $export->created_at,
+            ]),
+            'export_formats' => DocumentExport::FORMATS,
         ]);
     }
 

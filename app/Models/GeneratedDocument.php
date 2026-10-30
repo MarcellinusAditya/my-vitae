@@ -96,6 +96,16 @@ class GeneratedDocument extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        // A DB-level cascade would delete export rows without firing their model
+        // events, leaving files orphaned on disk. Delete through Eloquent instead.
+        static::deleting(function (GeneratedDocument $document): void {
+            $document->exports()->get()->each->delete();
+            $document->revisions()->delete();
+        });
+    }
+
     public function jobApplication(): BelongsTo
     {
         return $this->belongsTo(JobApplication::class);
@@ -104,6 +114,11 @@ class GeneratedDocument extends Model
     public function revisions(): HasMany
     {
         return $this->hasMany(DocumentRevision::class)->latest('id');
+    }
+
+    public function exports(): HasMany
+    {
+        return $this->hasMany(DocumentExport::class, 'generated_document_id')->latest('id');
     }
 
     /**

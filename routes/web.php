@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CareerProfileController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DocumentExportController;
 use App\Http\Controllers\GeneratedDocumentController;
 use App\Http\Controllers\JobApplicationController;
 use App\Http\Controllers\ProfileCertificationController;
@@ -94,6 +95,11 @@ Route::middleware('auth')->group(function () {
     Route::patch('/documents/{document}/order', [GeneratedDocumentController::class, 'reorder'])->name('documents.reorder');
     Route::post('/documents/{document}/revisions/{revision}/restore', [GeneratedDocumentController::class, 'restore'])->name('documents.revisions.restore');
     Route::get('/documents/{document}/preview', [GeneratedDocumentController::class, 'preview'])->name('documents.preview');
+
+    // Exports
+    Route::post('/documents/{document}/exports', [DocumentExportController::class, 'store'])->name('documents.exports.store');
+    Route::get('/exports/{export}/download', [DocumentExportController::class, 'download'])->name('exports.download');
+    Route::delete('/exports/{export}', [DocumentExportController::class, 'destroy'])->name('exports.destroy');
     Route::delete('/documents/{document}', [GeneratedDocumentController::class, 'destroy'])->name('documents.destroy');
 });
 

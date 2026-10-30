@@ -38,6 +38,16 @@ interface Content {
     dropped?: number;
 }
 
+interface ExportRow {
+    id: number;
+    format: string;
+    format_label: string;
+    filename: string;
+    file_size: number;
+    status: string;
+    created_at: string;
+}
+
 interface Revision {
     id: number;
     source: string;
@@ -77,7 +87,9 @@ interface ShowProps {
     revisions: Revision[];
     word_limit: number;
     overflow_warning: string | null;
-    flash?: { success?: string };
+    exports: ExportRow[];
+    export_formats: Record<string, string>;
+    flash?: { success?: string; error?: string };
 }
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
@@ -93,6 +105,13 @@ const evidenceLabel = (ref: string): string => {
 
 const AUTOSAVE_DELAY_MS = 1500;
 
+function formatSize(bytes: number): string {
+    if (!bytes) return '—';
+    const mb = bytes / (1024 * 1024);
+    if (mb >= 1) return `${mb.toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 function xsrfToken(): string {
     const match = document.cookie.split('; ').find((row) => row.startsWith('XSRF-TOKEN='));
 
@@ -100,7 +119,7 @@ function xsrfToken(): string {
 }
 
 export default function DocumentShow(props: ShowProps) {
-    const { document, application, sections, templates, revisions, word_limit, overflow_warning, flash } = props;
+    const { document, application, sections, templates, revisions, word_limit, overflow_warning, exports, export_formats, flash } = props;
 
     const [polling, setPolling] = useState(
         document.generation_status === 'pending' || document.generation_status === 'processing',
@@ -238,6 +257,15 @@ export default function DocumentShow(props: ShowProps) {
         });
     };
 
+    const createExport = (format: string) => {
+        router.post(route('documents.exports.store', document.id), { format }, { preserveScroll: true });
+    };
+
+    const deleteExport = (exportId: number) => {
+        if (!window.confirm('Hapus file ekspor ini?')) return;
+        router.delete(route('exports.destroy', exportId), { preserveScroll: true });
+    };
+
     const restore = (revisionId: number) => {
         if (!window.confirm('Pulihkan versi ini? Isi saat ini akan disimpan sebagai revisi baru.')) return;
         router.post(route('documents.revisions.restore', [document.id, revisionId]), {}, { preserveScroll: true });
@@ -288,6 +316,7 @@ export default function DocumentShow(props: ShowProps) {
             <Head title={document.title} />
 
             {flash?.success && <div className="mb-6 text-small font-medium text-success">{flash.success}</div>}
+            {flash?.error && <div className="mb-6 text-small font-medium text-danger">{flash.error}</div>}
 
             {running && (
                 <section className="card mb-6 p-5 sm:p-6">
@@ -548,6 +577,68 @@ export default function DocumentShow(props: ShowProps) {
                                     src={`${route('documents.preview', document.id)}?v=${previewNonce}`}
                                     className="mt-3 h-[520px] w-full rounded-lg border border-border bg-white"
                                 />
+                            </section>
+
+                            <section className="card p-4 sm:p-5">
+                                <h2 className="text-h3">Unduh</h2>
+                                <p className="mt-0.5 text-caption text-foreground-subtle">
+                                    File dibuat dari konten yang sedang Anda lihat.
+                                </p>
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {Object.entries(export_formats).map(([format, label]) => (
+                                        <button
+                                            key={format}
+                                            type="button"
+                                            className="btn-primary"
+                                            onClick={() => createExport(format)}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {overflow && (
+                                    <p className="mt-2 text-caption text-warning">
+                                        Dokumen melewati batas nyaman — hasil ekspor bisa lebih dari satu halaman.
+                                    </p>
+                                )}
+
+                                {exports.length === 0 ? (
+                                    <p className="mt-3 text-small text-foreground-muted">Belum ada file ekspor.</p>
+                                ) : (
+                                    <ul className="mt-3 space-y-2">
+                                        {exports.map((row) => (
+                                            <li key={row.id} className="rounded-lg border border-border px-3 py-2">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-small font-medium">{row.format_label}</span>
+                                                    <span className="text-caption text-foreground-subtle">{formatSize(row.file_size)}</span>
+                                                </div>
+                                                <p className="mt-0.5 truncate text-caption text-foreground-muted">{row.filename}</p>
+                                                <div className="mt-1 flex items-center justify-between gap-2">
+                                                    <span className="text-caption text-foreground-subtle">
+                                                        {new Date(row.created_at).toLocaleString('id-ID')}
+                                                    </span>
+                                                    <span className="flex gap-1">
+                                                        <a
+                                                            href={route('exports.download', row.id)}
+                                                            className="btn-secondary px-2 py-1 text-caption"
+                                                        >
+                                                            Unduh
+                                                        </a>
+                                                        <button
+                                                            type="button"
+                                                            className="btn-secondary px-2 py-1 text-caption text-danger"
+                                                            onClick={() => deleteExport(row.id)}
+                                                        >
+                                                            Hapus
+                                                        </button>
+                                                    </span>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
                             </section>
 
                             <section className="card p-4 sm:p-5">

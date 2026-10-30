@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\GeneratedDocument;
 use App\Services\CareerProfileService;
 use App\Services\ProfileCompletenessService;
 use Illuminate\Http\Request;
@@ -34,7 +35,9 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard', [
             'counts' => [
                 'applications' => $user->jobApplications()->count(),
-                'documents' => 0,
+                'documents' => GeneratedDocument::query()
+                    ->whereHas('jobApplication', fn ($q) => $q->where('user_id', $user->id))
+                    ->count(),
             ],
             'recentApplications' => $user->jobApplications()
                 ->latest()

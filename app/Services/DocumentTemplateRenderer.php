@@ -7,9 +7,9 @@ use App\Models\GeneratedDocument;
 /**
  * Renders a generated document as ATS-friendly HTML.
  *
- * Single column, standard headings, no tables/icons/graphics. The same markup
- * is reused for the in-app preview and (Phase 7) for PDF/DOCX export, so the
- * user never sees a layout that differs from the exported file.
+ * The layout comes from DocumentOutlineBuilder, so the preview, the PDF export
+ * and the DOCX export all render the same section order and headings.
+ * Single column, standard headings, no tables/icons/graphics.
  */
 class DocumentTemplateRenderer
 {
@@ -39,15 +39,51 @@ class DocumentTemplateRenderer
      */
     public function render(GeneratedDocument $document): string
     {
-        $content = $document->content_json ?? [];
-
-        return $document->type === GeneratedDocument::TYPE_COVER_LETTER
-            ? $this->renderCoverLetter($content)
-            : $this->renderResume($document, $content);
+        return $this->renderOutline(app(DocumentOutlineBuilder::class)->build($document));
     }
 
     /**
-     * Standalone printable page, used by the preview endpoint.
+     * Render an already-built outline (used by the exporters).
+     *
+     * @param  array<string, mixed>  $outline
+     */
+    public function renderOutline(array $outline): string
+    {
+        $html = '';
+
+        $name = trim((string) ($outline['header']['name'] ?? ''));
+
+        if ($name !== '') {
+            $html .= '<h1>'.e($name).'</h1>';
+        }
+
+        $contact = array_filter((array) ($outline['header']['contact'] ?? []), fn ($bit) => trim((string) $bit) !== '');
+
+        if ($contact !== []) {
+            $bits = array_map(fn ($bit) => $this->contactBit((string) $bit), $contact);
+            $html .= '<p class="contact">'.implode(' · ', $bits).'</p>';
+        }
+
+        foreach ($outline['sections'] ?? [] as $section) {
+            $heading = trim((string) ($section['heading'] ?? ''));
+            $blocks = $this->renderBlocks($section['blocks'] ?? []);
+
+            if (trim($blocks) === '') {
+                continue;
+            }
+
+            if ($heading !== '') {
+                $html .= '<h2>'.e($heading).'</h2>';
+            }
+
+            $html .= $blocks;
+        }
+
+        return $html;
+    }
+
+    /**
+     * Standalone printable page, used by the preview endpoint and the PDF exporter.
      */
     public function renderPage(GeneratedDocument $document): string
     {
@@ -78,6 +114,7 @@ class DocumentTemplateRenderer
   li{margin:0 0 3px}
   p{margin:0 0 8px}
   .skills{display:block}
+  @page{margin:18mm 16mm}
   @media print{body{padding:0}}
 </style>
 </head>
@@ -89,67 +126,42 @@ HTML;
     }
 
     /**
-     * @param  array<string, mixed>  $content
+     * Contact values stay clickable: mailto for emails, real anchors for URLs.
+     * ATS parsers read the visible text either way.
      */
-    private function renderResume(GeneratedDocument $document, array $content): string
+    private function contactBit(string $value): string
     {
-        $headings = self::HEADINGS[$document->language] ?? self::HEADINGS['id'];
-        $contact = $document->jobApplication?->careerProfile?->contact;
-        $name = $contact?->full_name ?: ($document->jobApplication?->user?->name ?? '');
+        $value = trim($value);
 
-        $html = '';
-
-        if ($name !== '') {
-            $html .= '<h1>'.e($name).'</h1>';
+        if (filter_var($value, FILTER_VALIDATE_EMAIL) !== false) {
+            return '<a href="mailto:'.e($value).'">'.e($value).'</a>';
         }
 
-        $contactBits = array_filter([
-            $contact?->email,
-            $contact?->phone,
-            $contact?->location,
-            $contact?->linkedin_url,
-            $contact?->github_url,
-            $contact?->portfolio_url,
-        ]);
-
-        if ($contactBits !== []) {
-            $html .= '<p class="contact">'.e(implode(' · ', $contactBits)).'</p>';
+        if (preg_match('#^https?://#i', $value) === 1 && filter_var($value, FILTER_VALIDATE_URL) !== false) {
+            return '<a href="'.e($value).'">'.e($value).'</a>';
         }
 
-        foreach ($document->resolvedSectionOrder() as $section) {
-            $html .= $this->renderSection($section, $content, $headings);
-        }
-
-        return $html;
+        return e($value);
     }
 
     /**
-     * @param  array<string, mixed>  $content
-     * @param  array<string, string>  $headings
+     * @param  list<array<string, mixed>>  $blocks
      */
-    private function renderSection(string $section, array $content, array $headings): string
+    private function renderBlocks(array $blocks): string
     {
-        return match ($section) {
-            'summary' => $this->block($headings['summary'], $this->paragraph($content['summary'] ?? null)),
-            'skills' => $this->block($headings['skills'], $this->skills($content['skills'] ?? [])),
-            'experiences' => $this->block($headings['experiences'], $this->experiences($content['experiences'] ?? [])),
-            'projects' => $this->block($headings['projects'], $this->projects($content['projects'] ?? [])),
-            'education' => $this->block($headings['education'], $this->education($content['education'] ?? [])),
-            'certifications' => $this->block($headings['certifications'], $this->certifications($content['certifications'] ?? [])),
-            'languages' => $this->block($headings['languages'], $this->paragraph(
-                is_array($content['languages'] ?? null) ? implode(', ', $content['languages']) : ($content['languages'] ?? null),
-            )),
-            default => '',
-        };
-    }
+        $html = '';
 
-    private function block(string $heading, string $inner): string
-    {
-        if (trim($inner) === '') {
-            return '';
+        foreach ($blocks as $block) {
+            $html .= match ($block['type'] ?? '') {
+                'paragraph' => $this->paragraph($block['text'] ?? null),
+                'inline_list' => $this->inlineList($block['items'] ?? []),
+                'bullets' => $this->bullets($block['items'] ?? []),
+                'entry' => $this->entry($block),
+                default => '',
+            };
         }
 
-        return '<h2>'.e($heading).'</h2>'.$inner;
+        return $html;
     }
 
     private function paragraph(mixed $value): string
@@ -160,189 +172,71 @@ HTML;
     }
 
     /**
-     * @param  array<int, mixed>  $skills
+     * @param  array<int, mixed>  $items
      */
-    private function skills(array $skills): string
+    private function inlineList(array $items): string
     {
-        $names = [];
+        $clean = array_values(array_filter(array_map(
+            fn ($item) => is_string($item) ? trim($item) : '',
+            $items,
+        ), fn ($item) => $item !== ''));
 
-        foreach ($skills as $skill) {
-            $name = is_array($skill) ? ($skill['name'] ?? null) : $skill;
-
-            if (is_string($name) && trim($name) !== '') {
-                $names[] = trim($name);
-            }
-        }
-
-        return $names === [] ? '' : '<p class="skills">'.e(implode(' · ', $names)).'</p>';
+        return $clean === [] ? '' : '<p class="skills">'.e(implode(' · ', $clean)).'</p>';
     }
 
     /**
-     * @param  array<int, mixed>  $experiences
+     * @param  array<int, mixed>  $items
      */
-    private function experiences(array $experiences): string
+    private function bullets(array $items): string
     {
         $html = '';
 
-        foreach ($experiences as $experience) {
-            if (! is_array($experience)) {
-                continue;
-            }
-
-            $role = trim((string) ($experience['role'] ?? ''));
-            $organization = trim((string) ($experience['organization'] ?? ''));
-
-            if ($role === '' && $organization === '') {
-                continue;
-            }
-
-            $html .= '<h3>'.e($role !== '' ? $role : $organization).'</h3>';
-            $html .= '<p class="meta">'.e($organization).$this->dates($experience).'</p>';
-            $html .= $this->bullets($experience['bullets'] ?? []);
-        }
-
-        return $html;
-    }
-
-    /**
-     * @param  array<int, mixed>  $projects
-     */
-    private function projects(array $projects): string
-    {
-        $html = '';
-
-        foreach ($projects as $project) {
-            if (! is_array($project)) {
-                continue;
-            }
-
-            $name = trim((string) ($project['name'] ?? ''));
-
-            if ($name === '') {
-                continue;
-            }
-
-            $role = trim((string) ($project['role'] ?? ''));
-            $html .= '<h3>'.e($name).($role !== '' ? ' — '.e($role) : '').'</h3>';
-            $html .= $this->bullets($project['bullets'] ?? []);
-
-            $technologies = array_filter(array_map('strval', (array) ($project['technologies'] ?? [])));
-
-            if ($technologies !== []) {
-                $html .= '<p class="meta">'.e(implode(', ', $technologies)).'</p>';
-            }
-        }
-
-        return $html;
-    }
-
-    /**
-     * @param  array<int, mixed>  $educations
-     */
-    private function education(array $educations): string
-    {
-        $html = '';
-
-        foreach ($educations as $education) {
-            if (! is_array($education)) {
-                continue;
-            }
-
-            $institution = trim((string) ($education['institution'] ?? ''));
-
-            if ($institution === '') {
-                continue;
-            }
-
-            $degree = trim((string) ($education['degree'] ?? ''));
-            $field = trim((string) ($education['field_of_study'] ?? ''));
-            $line = $degree !== '' ? $degree : '';
-            $line .= $field !== '' ? ($line !== '' ? ', ' : '').$field : '';
-
-            $html .= '<h3>'.e($institution).'</h3>';
-            $html .= '<p class="meta">'.e($line).$this->dates($education).'</p>';
-        }
-
-        return $html;
-    }
-
-    /**
-     * @param  array<int, mixed>  $certifications
-     */
-    private function certifications(array $certifications): string
-    {
-        $items = '';
-
-        foreach ($certifications as $certification) {
-            if (! is_array($certification)) {
-                continue;
-            }
-
-            $name = trim((string) ($certification['name'] ?? ''));
-
-            if ($name === '') {
-                continue;
-            }
-
-            $issuer = trim((string) ($certification['issuer'] ?? ''));
-            $date = trim((string) ($certification['issue_date'] ?? ''));
-            $suffix = implode(' · ', array_filter([$issuer, $date]));
-
-            $items .= '<li>'.e($name).($suffix !== '' ? ' — '.e($suffix) : '').'</li>';
-        }
-
-        return $items === '' ? '' : '<ul>'.$items.'</ul>';
-    }
-
-    /**
-     * @param  array<int, mixed>  $bullets
-     */
-    private function bullets(array $bullets): string
-    {
-        $items = '';
-
-        foreach ($bullets as $bullet) {
-            $text = is_string($bullet) ? trim($bullet) : '';
+        foreach ($items as $item) {
+            $text = is_string($item) ? trim($item) : '';
 
             if ($text !== '') {
-                $items .= '<li>'.e($text).'</li>';
+                $html .= '<li>'.e($text).'</li>';
             }
         }
 
-        return $items === '' ? '' : '<ul>'.$items.'</ul>';
+        return $html === '' ? '' : '<ul>'.$html.'</ul>';
     }
 
     /**
-     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $block
      */
-    private function dates(array $row): string
+    private function entry(array $block): string
     {
-        $start = trim((string) ($row['start_date'] ?? ''));
-        $end = ! empty($row['is_current']) ? 'sekarang' : trim((string) ($row['end_date'] ?? ''));
+        $title = trim((string) ($block['title'] ?? ''));
+        $suffix = trim((string) ($block['title_suffix'] ?? ''));
 
-        if ($start === '' && $end === '') {
+        if ($title === '' && $suffix === '') {
             return '';
         }
 
-        return ' | '.trim($start.' – '.$end, ' –');
-    }
+        $subtitle = trim((string) ($block['subtitle'] ?? ''));
+        $dates = trim((string) ($block['dates'] ?? ''));
 
-    /**
-     * @param  array<string, mixed>  $content
-     */
-    private function renderCoverLetter(array $content): string
-    {
-        $body = '';
+        $html = '<h3>'.e($title.($suffix !== '' ? ' — '.$suffix : '')).'</h3>';
 
-        foreach ($content['body_paragraphs'] ?? [] as $paragraph) {
-            $text = is_array($paragraph) ? ($paragraph['text'] ?? null) : $paragraph;
-            $body .= $this->paragraph($text);
+        $meta = $subtitle;
+
+        if ($dates !== '') {
+            $meta .= ($meta !== '' ? ' | ' : '').$dates;
         }
 
-        return $this->paragraph($content['recipient_line'] ?? null)
-            .$this->paragraph($content['opening'] ?? null)
-            .$body
-            .$this->paragraph($content['closing'] ?? null)
-            .$this->paragraph($content['signature'] ?? null);
+        if ($meta !== '') {
+            $html .= '<p class="meta">'.e($meta).'</p>';
+        }
+
+        $html .= $this->bullets($block['items'] ?? []);
+
+        $after = array_filter((array) ($block['items_after'] ?? []), fn ($item) => trim((string) $item) !== '');
+
+        if ($after !== []) {
+            $html .= '<p class="meta">'.e(implode(', ', $after)).'</p>';
+        }
+
+        return $html;
     }
 }

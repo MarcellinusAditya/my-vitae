@@ -73,15 +73,15 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 
 ## 4. Kondisi implementasi saat ini
 
-(Section ini menggambarkan kondisi per Phase 6. Lihat bagian bawah untuk catatan Phase 1–6.)
+(Section ini menggambarkan kondisi per Phase 7. Lihat bagian bawah untuk catatan Phase 1–7.)
 
-- Model: `User`, `CareerProfile` + 6 section profil, `ProfileDocument` (P3), `JobApplication`, `JobRequirementAnalysis` (P4), `GeneratedDocument`, `AiUsageLog` (P5), `DocumentRevision` (P6).
-- Controller: `Auth/*`, `ProfileController`, `CareerProfileController`, 6 section controller, `ProfileDocumentController`, `JobApplicationController`, `GeneratedDocumentController`.
-- Service: `CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`, `JobApplicationService`, `ProfileSnapshotService`, `DocumentGenerationService`, `DocumentEditorService`, `DocumentTemplateRenderer`, `Ai\*`.
+- Model: `User`, `CareerProfile` + 6 section profil, `ProfileDocument` (P3), `JobApplication`, `JobRequirementAnalysis` (P4), `GeneratedDocument`, `AiUsageLog` (P5), `DocumentRevision` (P6), `DocumentExport` (P7).
+- Controller: `Auth/*`, `ProfileController`, `CareerProfileController`, 6 section controller, `ProfileDocumentController`, `JobApplicationController`, `GeneratedDocumentController`, `DocumentExportController`.
+- Service: profil & CV (`CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`), lamaran (`JobApplicationService`, `ProfileSnapshotService`), dokumen (`DocumentGenerationService`, `DocumentEditorService`, `DocumentTemplateRenderer`, `DocumentOutlineBuilder`), ekspor (`DocumentExportService`, `Exports\PdfExporter`, `Exports\DocxExporter`), pembersihan (`UserDataCleanupService`), `Ai\*`.
 - Job: `ExtractCvDocumentJob`, `AnalyzeJobApplicationJob`, `GenerateDocumentJob`.
 - Halaman: `Welcome`, `Dashboard`, auth, profile, `CareerProfile/Index`, `CareerProfile/Import/*`, `Applications/*`, `Documents/*`.
 
-## 4a. Catatan Phase 1–6
+## 4a. Catatan Phase 1–7
 
 ### Phase 1 — fondasi UI
 - Design tokens di `tailwind.config.js` + `resources/css/app.css` (`btn-*`, `card`, `field-*`, `badge-*`), `AuthenticatedLayout` (sidebar + mobile drawer), `GuestLayout` disamakan, landing page produk.
@@ -135,6 +135,18 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 - **Validasi panjang:** `word_count` + batas lunak (CV ringkas 700 / detail 1200, cover letter 450) → `overflow_warning` (peringatan, bukan blokir).
 - **Regenerate per bagian benar-benar per bagian:** `section` diteruskan ke job; job mengambil `_parent_content`, mengganti hanya section itu, membuang key internal sebelum simpan. Tanpa `section` → versi penuh.
 - Test: `DocumentEditorTest` (11 tc) + `DocumentPreviewTest` (7 tc).
+
+### Phase 7 — PDF/DOCX export
+- **Dependency:** `dompdf/dompdf ^3.1` (LGPL-2.1, murni PHP; ekstensi `gd`/`zip`/`mbstring` sudah tersedia). DOCX memakai `phpoffice/phpword` yang sudah terpasang sejak Phase 3. `symfony/mime` ikut di-upgrade 7.4.19 → 7.4.22 (menutup CVE-2026-45070 yang ditemukan `composer audit`).
+- **Satu sumber layout:** `DocumentOutlineBuilder` mengubah `content_json` + `section_order` menjadi outline ternormalisasi; `DocumentTemplateRenderer` (HTML/preview), `PdfExporter` (dompdf dari HTML yang sama), dan `DocxExporter` (PhpWord dari outline) semuanya membaca struktur itu. Urutan section dan heading dijamin identik.
+- **PDF:** A4 portrait, margin 18mm/16mm, font Helvetica standar, `isRemoteEnabled=false` + `isJavascriptEnabled=false` + `chroot` ke storage (anti SSRF). Teks tetap **selectable** (terverifikasi lewat `smalot/pdfparser`). Email & URL jadi tautan nyata (`/Annots` + `/URI`). Multi-halaman otomatis.
+- **DOCX:** Arial, heading 1/2/3, bullet list asli (`addListItem`), hyperlink nyata di `word/_rels/document.xml.rels` (`mailto:` + `https://`). Tanpa tabel.
+- **Sinkron, bukan queue** — 1–2 halaman dirender < 1 detik; queue hanya menambah latensi.
+- **File & retensi:** disimpan di disk `local` (`document-exports/{docId}/`), nama file slug aman (`cv-senior-backend-engineer-global-fintech-v2-20261028.pdf`). `DocumentExportService::prune()` menyisakan **5 ekspor per format** per dokumen, menghapus baris + file.
+- **Otorisasi:** `DocumentExportPolicy` (owner-only) untuk download & delete; download lewat route (`exports.download`), bukan URL publik. Non-owner → 403 (terverifikasi di test dan smoke).
+- **Bug pembersihan yang ditemukan & diperbaiki:** penghapusan lewat query builder (`$user->jobApplications()->delete()`, `ProfileController::destroy`) **tidak memicu model event**, sehingga file ekspor jadi yatim (4 file tertinggal saat pengujian). Solusi: `UserDataCleanupService` menghapus file secara eksplisit dalam urutan benar (ekspor → revisi → dokumen → analisis → lamaran → profil → user); dipakai oleh `JobApplicationController::destroy` dan `ProfileController::destroy`, dengan regression test.
+- **Dashboard:** `counts.documents` kini menghitung dokumen nyata (sebelumnya hardcode `0`).
+- Test: `DocumentExportTest` (11 tc) + `DocumentExportCleanupTest` (3 tc) + `DocumentOutlineTest` (5 tc).
 
 ## 5. Risiko terbuka
 

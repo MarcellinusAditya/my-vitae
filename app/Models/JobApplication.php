@@ -68,6 +68,17 @@ class JobApplication extends Model
         return $this->hasMany(GeneratedDocument::class)->latest('id');
     }
 
+    protected static function booted(): void
+    {
+        // Bulk deletes (e.g. $user->jobApplications()->delete()) bypass model
+        // events, so export/revision files would be orphaned. Clean up in order.
+        static::deleting(function (JobApplication $application): void {
+            foreach ($application->generatedDocuments()->get() as $document) {
+                $document->delete(); // removes exports (with files) + revisions
+            }
+        });
+    }
+
     /**
      * Latest generation run of a given type.
      */

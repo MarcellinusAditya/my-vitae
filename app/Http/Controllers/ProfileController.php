@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Services\UserDataCleanupService;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -53,7 +54,8 @@ class ProfileController extends Controller
 
         Auth::logout();
 
-        $user->delete();
+        // Remove applications/documents and their files before the account row.
+        app(UserDataCleanupService::class)->deleteUser($user);
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();

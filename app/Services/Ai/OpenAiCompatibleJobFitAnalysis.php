@@ -14,6 +14,7 @@ class OpenAiCompatibleJobFitAnalysis implements JobFitAnalysisProvider
     public function __construct(
         private readonly ChatCompletionClient $client,
         private readonly ProfileSnapshotService $snapshots,
+        private readonly PromptSanitizer $sanitizer,
     ) {}
 
     public function name(): string
@@ -23,11 +24,18 @@ class OpenAiCompatibleJobFitAnalysis implements JobFitAnalysisProvider
 
     public function analyze(array $profileSnapshot, array $jobSnapshot): array
     {
-        $profileText = mb_substr($this->snapshots->toPromptText($profileSnapshot), 0, self::MAX_INPUT_CHARS);
-        $jobText = mb_substr($this->jobText($jobSnapshot), 0, self::MAX_INPUT_CHARS);
+        $profileText = $this->sanitizer->wrap(
+            mb_substr($this->snapshots->toPromptText($profileSnapshot), 0, self::MAX_INPUT_CHARS),
+            'cv_text',
+        );
+
+        $jobText = $this->sanitizer->wrap(
+            mb_substr($this->jobText($jobSnapshot), 0, self::MAX_INPUT_CHARS),
+            'job_posting',
+        );
 
         $content = $this->client->complete([
-            ['role' => 'system', 'content' => 'You only output one valid JSON object. Never add commentary or markdown.'],
+            ['role' => 'system', 'content' => 'You only output one valid JSON object. Never add commentary or markdown. '.PromptSanitizer::SYSTEM_RULE],
             ['role' => 'user', 'content' => $this->prompt($profileText, $jobText, (string) ($jobSnapshot['language'] ?? 'id'))],
         ], 0.1);
 

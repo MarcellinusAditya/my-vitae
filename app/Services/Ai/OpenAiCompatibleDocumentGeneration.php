@@ -17,6 +17,7 @@ class OpenAiCompatibleDocumentGeneration implements DocumentGenerationProvider
     public function __construct(
         private readonly ChatCompletionClient $client,
         private readonly ProfileSnapshotService $snapshots,
+        private readonly PromptSanitizer $sanitizer,
     ) {}
 
     public function name(): string
@@ -27,7 +28,7 @@ class OpenAiCompatibleDocumentGeneration implements DocumentGenerationProvider
     public function generateResume(array $profileSnapshot, array $jobSnapshot, array $preferences): array
     {
         $raw = $this->client->complete([
-            ['role' => 'system', 'content' => 'You only output one valid JSON object. Never add commentary or markdown.'],
+            ['role' => 'system', 'content' => 'You only output one valid JSON object. Never add commentary or markdown. '.PromptSanitizer::SYSTEM_RULE],
             ['role' => 'user', 'content' => $this->resumePrompt($profileSnapshot, $jobSnapshot, $preferences)],
         ], 0.3);
 
@@ -37,7 +38,7 @@ class OpenAiCompatibleDocumentGeneration implements DocumentGenerationProvider
     public function generateCoverLetter(array $profileSnapshot, array $jobSnapshot, array $preferences): array
     {
         $raw = $this->client->complete([
-            ['role' => 'system', 'content' => 'You only output one valid JSON object. Never add commentary or markdown.'],
+            ['role' => 'system', 'content' => 'You only output one valid JSON object. Never add commentary or markdown. '.PromptSanitizer::SYSTEM_RULE],
             ['role' => 'user', 'content' => $this->coverLetterPrompt($profileSnapshot, $jobSnapshot, $preferences)],
         ], 0.4);
 
@@ -51,8 +52,12 @@ class OpenAiCompatibleDocumentGeneration implements DocumentGenerationProvider
      */
     private function resumePrompt(array $profile, array $job, array $prefs): string
     {
-        $profileText = mb_substr($this->snapshots->toPromptText($profile), 0, self::MAX_INPUT_CHARS);
-        $jobText = $this->jobText($job);
+        $profileText = $this->sanitizer->wrap(
+            mb_substr($this->snapshots->toPromptText($profile), 0, self::MAX_INPUT_CHARS),
+            'cv_text',
+        );
+
+        $jobText = $this->sanitizer->wrap($this->jobText($job), 'job_posting');
         $language = ($prefs['language'] ?? 'id') === 'en' ? 'English' : 'Bahasa Indonesia';
         $length = ($prefs['resume_length'] ?? 'concise') === 'detailed' ? 'detailed (up to 4 bullets per role)' : 'concise (2-3 bullets per role)';
         $analysis = $this->analysisText($prefs);
@@ -101,8 +106,12 @@ PROMPT;
      */
     private function coverLetterPrompt(array $profile, array $job, array $prefs): string
     {
-        $profileText = mb_substr($this->snapshots->toPromptText($profile), 0, self::MAX_INPUT_CHARS);
-        $jobText = $this->jobText($job);
+        $profileText = $this->sanitizer->wrap(
+            mb_substr($this->snapshots->toPromptText($profile), 0, self::MAX_INPUT_CHARS),
+            'cv_text',
+        );
+
+        $jobText = $this->sanitizer->wrap($this->jobText($job), 'job_posting');
         $language = ($prefs['language'] ?? 'id') === 'en' ? 'English' : 'Bahasa Indonesia';
         $tone = match ($prefs['tone'] ?? 'professional') {
             'formal' => 'formal and respectful',

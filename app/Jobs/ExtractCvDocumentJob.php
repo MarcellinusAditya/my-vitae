@@ -67,7 +67,7 @@ class ExtractCvDocumentJob implements ShouldQueue
         } catch (\Throwable $e) {
             Log::warning('CV extraction job failed', [
                 'document_id' => $document->id,
-                'error' => $e->getMessage(),
+                'error' => $e::class,
             ]);
 
             $document->markFailed('extraction_failed');

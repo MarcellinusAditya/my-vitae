@@ -21,10 +21,13 @@ class OpenAiCompatibleCvExtraction implements CvExtractionProvider
 
     public function extractDraft(string $cvText): array
     {
-        $chunk = mb_substr($this->normalize($cvText), 0, self::MAX_INPUT_CHARS);
+        $chunk = $this->sanitizer->wrap(
+            mb_substr($this->normalize($cvText), 0, self::MAX_INPUT_CHARS),
+            'cv_text',
+        );
 
         $content = $this->client->complete([
-            ['role' => 'system', 'content' => 'You only output one valid JSON object. Never add commentary or markdown.'],
+            ['role' => 'system', 'content' => 'You only output one valid JSON object. Never add commentary or markdown. '.PromptSanitizer::SYSTEM_RULE],
             ['role' => 'user', 'content' => $this->prompt($chunk)],
         ]);
 

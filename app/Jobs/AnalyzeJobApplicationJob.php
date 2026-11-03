@@ -71,7 +71,7 @@ class AnalyzeJobApplicationJob implements ShouldQueue
         } catch (\Throwable $e) {
             Log::warning('Job-fit analysis failed', [
                 'analysis_id' => $analysis->id,
-                'error' => $e->getMessage(),
+                'error' => $e::class,
             ]);
 
             $analysis->markFailed('analysis_failed');

@@ -8,10 +8,66 @@ use App\Models\User;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Records AI operations without ever storing prompts or CV text.
+ * Records AI operations without ever storing prompts or CV text, and enforces
+ * the per-user daily quota.
  */
 class AiUsageLogger
 {
+    /** Error code thrown when the daily quota is exhausted. */
+    public const QUOTA_EXCEEDED = 'quota_exceeded';
+
+    /**
+     * Throws when the user already used the daily allowance.
+     *
+     * @throws \RuntimeException with the code `quota_exceeded`
+     */
+    public function ensureQuota(?User $user): void
+    {
+        if ($user === null) {
+            return;
+        }
+
+        $limit = (int) config('ai.limits.daily_quota', 50);
+
+        if ($limit <= 0) {
+            return;
+        }
+
+        $used = AiUsageLog::query()
+            ->where('user_id', $user->id)
+            ->where('status', AiUsageLog::STATUS_SUCCESS)
+            ->where('created_at', '>=', now()->startOfDay())
+            ->count();
+
+        if ($used >= $limit) {
+            throw new \RuntimeException(self::QUOTA_EXCEEDED);
+        }
+    }
+
+    /**
+     * Successful operations left for this user today (null = unlimited).
+     */
+    public function remainingQuota(?User $user): ?int
+    {
+        if ($user === null) {
+            return null;
+        }
+
+        $limit = (int) config('ai.limits.daily_quota', 50);
+
+        if ($limit <= 0) {
+            return null;
+        }
+
+        $used = AiUsageLog::query()
+            ->where('user_id', $user->id)
+            ->where('status', AiUsageLog::STATUS_SUCCESS)
+            ->where('created_at', '>=', now()->startOfDay())
+            ->count();
+
+        return max(0, $limit - $used);
+    }
+
     public function success(
         string $operation,
         string $provider,
@@ -67,8 +123,9 @@ class AiUsageLogger
         try {
             return AiUsageLog::create($attributes);
         } catch (\Throwable $e) {
-            // Never let observability break the product path.
-            Log::warning('Could not write AI usage log', ['error' => $e->getMessage()]);
+            // Never let observability break the product path. The message is
+            // generic on purpose: no prompt or CV text may reach the log.
+            Log::warning('Could not write AI usage log', ['error' => $e::class]);
 
             return new AiUsageLog($attributes);
         }

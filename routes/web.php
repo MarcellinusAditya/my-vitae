@@ -4,6 +4,7 @@ use App\Http\Controllers\CareerProfileController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentExportController;
 use App\Http\Controllers\GeneratedDocumentController;
+use App\Http\Controllers\HealthController;
 use App\Http\Controllers\JobApplicationController;
 use App\Http\Controllers\ProfileCertificationController;
 use App\Http\Controllers\ProfileContactController;
@@ -38,7 +39,8 @@ Route::middleware('auth')->group(function () {
 
     // CV Import
     Route::get('/career-profile/import', [ProfileDocumentController::class, 'index'])->name('career-profile.import.index');
-    Route::post('/career-profile/documents', [ProfileDocumentController::class, 'store'])->name('career-profile.documents.store');
+    Route::post('/career-profile/documents', [ProfileDocumentController::class, 'store'])
+        ->middleware(['throttle:uploads', 'ai.quota'])->name('career-profile.documents.store');
     Route::get('/career-profile/documents/{document}', [ProfileDocumentController::class, 'show'])->name('career-profile.import.show');
     Route::post('/career-profile/documents/{document}/confirm', [ProfileDocumentController::class, 'confirm'])->name('career-profile.import.confirm');
     Route::get('/career-profile/documents/{document}/download', [ProfileDocumentController::class, 'download'])->name('career-profile.documents.download');
@@ -79,17 +81,20 @@ Route::middleware('auth')->group(function () {
     Route::get('/applications/{application}/edit', [JobApplicationController::class, 'edit'])->name('applications.edit');
     Route::patch('/applications/{application}', [JobApplicationController::class, 'update'])->name('applications.update');
     Route::patch('/applications/{application}/status', [JobApplicationController::class, 'updateStatus'])->name('applications.status');
-    Route::post('/applications/{application}/analyze', [JobApplicationController::class, 'analyze'])->name('applications.analyze');
+    Route::post('/applications/{application}/analyze', [JobApplicationController::class, 'analyze'])
+        ->middleware(['throttle:ai', 'ai.quota'])->name('applications.analyze');
     Route::get('/applications/{application}/analysis-status', [JobApplicationController::class, 'analysisStatus'])->name('applications.analysis.status');
     Route::post('/applications/{application}/duplicate', [JobApplicationController::class, 'duplicate'])->name('applications.duplicate');
     Route::delete('/applications/{application}', [JobApplicationController::class, 'destroy'])->name('applications.destroy');
 
     // Generated documents
     Route::get('/documents', [GeneratedDocumentController::class, 'index'])->name('documents.index');
-    Route::post('/applications/{application}/documents', [GeneratedDocumentController::class, 'store'])->name('documents.store');
+    Route::post('/applications/{application}/documents', [GeneratedDocumentController::class, 'store'])
+        ->middleware(['throttle:ai', 'ai.quota'])->name('documents.store');
     Route::get('/documents/{document}', [GeneratedDocumentController::class, 'show'])->name('documents.show');
     Route::patch('/documents/{document}', [GeneratedDocumentController::class, 'update'])->name('documents.update');
-    Route::post('/documents/{document}/regenerate', [GeneratedDocumentController::class, 'regenerate'])->name('documents.regenerate');
+    Route::post('/documents/{document}/regenerate', [GeneratedDocumentController::class, 'regenerate'])
+        ->middleware(['throttle:ai', 'ai.quota'])->name('documents.regenerate');
     Route::get('/documents/{document}/status', [GeneratedDocumentController::class, 'status'])->name('documents.status');
     Route::patch('/documents/{document}/autosave', [GeneratedDocumentController::class, 'autosave'])->name('documents.autosave');
     Route::patch('/documents/{document}/order', [GeneratedDocumentController::class, 'reorder'])->name('documents.reorder');
@@ -97,10 +102,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/documents/{document}/preview', [GeneratedDocumentController::class, 'preview'])->name('documents.preview');
 
     // Exports
-    Route::post('/documents/{document}/exports', [DocumentExportController::class, 'store'])->name('documents.exports.store');
+    Route::post('/documents/{document}/exports', [DocumentExportController::class, 'store'])
+        ->middleware('throttle:exports')->name('documents.exports.store');
     Route::get('/exports/{export}/download', [DocumentExportController::class, 'download'])->name('exports.download');
     Route::delete('/exports/{export}', [DocumentExportController::class, 'destroy'])->name('exports.destroy');
     Route::delete('/documents/{document}', [GeneratedDocumentController::class, 'destroy'])->name('documents.destroy');
 });
+
+// Machine-readable queue health for monitoring. Public, aggregate counts only.
+Route::get('/health/queue', [HealthController::class, 'queue'])->name('health.queue');
 
 require __DIR__.'/auth.php';

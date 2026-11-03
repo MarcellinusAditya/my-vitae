@@ -73,11 +73,13 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 
 ## 4. Kondisi implementasi saat ini
 
-(Section ini menggambarkan kondisi per Phase 7. Lihat bagian bawah untuk catatan Phase 1–7.)
+(Section ini menggambarkan kondisi per Phase 8. Lihat bagian bawah untuk catatan Phase 1–8.)
 
 - Model: `User`, `CareerProfile` + 6 section profil, `ProfileDocument` (P3), `JobApplication`, `JobRequirementAnalysis` (P4), `GeneratedDocument`, `AiUsageLog` (P5), `DocumentRevision` (P6), `DocumentExport` (P7).
-- Controller: `Auth/*`, `ProfileController`, `CareerProfileController`, 6 section controller, `ProfileDocumentController`, `JobApplicationController`, `GeneratedDocumentController`, `DocumentExportController`.
-- Service: profil & CV (`CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`), lamaran (`JobApplicationService`, `ProfileSnapshotService`), dokumen (`DocumentGenerationService`, `DocumentEditorService`, `DocumentTemplateRenderer`, `DocumentOutlineBuilder`), ekspor (`DocumentExportService`, `Exports\PdfExporter`, `Exports\DocxExporter`), pembersihan (`UserDataCleanupService`), `Ai\*`.
+- Controller: `Auth/*`, `ProfileController`, `CareerProfileController`, 6 section controller, `ProfileDocumentController`, `JobApplicationController`, `GeneratedDocumentController`, `DocumentExportController`, `HealthController` (P8, queue health).
+- Service: profil & CV (`CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`), lamaran (`JobApplicationService`, `ProfileSnapshotService`), dokumen (`DocumentGenerationService`, `DocumentEditorService`, `DocumentTemplateRenderer`, `DocumentOutlineBuilder`), ekspor (`DocumentExportService`, `Exports\PdfExporter`, `Exports\DocxExporter`), pembersihan (`UserDataCleanupService`), `Ai\*` (+ `PromptSanitizer`, P8).
+- Middleware: `EnsureAiQuota` (P8, kuota harian AI).
+- Command: `app:prune-files` (P8, retensi), `app:queue-health` (P8, monitoring), `app:ai-eval` (P8, evaluasi manual).
 - Job: `ExtractCvDocumentJob`, `AnalyzeJobApplicationJob`, `GenerateDocumentJob`.
 - Halaman: `Welcome`, `Dashboard`, auth, profile, `CareerProfile/Index`, `CareerProfile/Import/*`, `Applications/*`, `Documents/*`.
 
@@ -148,6 +150,16 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 - **Dashboard:** `counts.documents` kini menghitung dokumen nyata (sebelumnya hardcode `0`).
 - Test: `DocumentExportTest` (11 tc) + `DocumentExportCleanupTest` (3 tc) + `DocumentOutlineTest` (5 tc).
 
+### Phase 8 — Hardening, evaluation & kesiapan produksi
+- **Rate limit & kuota AI:** limiter bernama per user di `AppServiceProvider` (`ai` 10/jam, `uploads` 20/jam, `exports` 30/jam, semua env-configurable via `config/ai.php`), respons 429 + `Retry-After`. Kuota harian (`AI_DAILY_LIMIT`, default 50) dicek middleware `EnsureAiQuota` **sebelum** job di-queue sehingga tidak ada panggilan provider yang terbuang.
+- **Prompt injection:** `PromptSanitizer` membungkus semua teks tak tepercaya (CV, JD, kualifikasi) dalam `<cv_text>`/`<job_posting>`/`<job_qualifications>`, menetralkan frasa override (`ignore previous instructions`, `system:` …) dan mencegah penutupan delimiter; `SYSTEM_RULE` menegaskan isi tag adalah DATA, bukan instruksi. Dipakai ketiga provider AI.
+- **Retensi terjadwal:** `app:prune-files` (harian 02:30) menghapus berkas CV & ekspor > 30 hari dan `failed_jobs` lama; baris audit tetap. Unggahan `pending` tidak dipangkas.
+- **Monitoring:** `GET /health/queue` (publik, agregat saja) + `php artisan app:queue-health --json` (exit non-zero bila degradasi).
+- **Audit PII:** log job memakai kelas exception, bukan pesan (yang bisa memuat cuplikan CV/JD); `ChatCompletionClient` hanya mencatat status HTTP. `ai_usage_logs` tidak menyimpan prompt/teks.
+- **Docs:** `docs/PRIVACY.md`, `docs/RETENTION.md`, `docs/DISCLAIMER.md`, `docs/DEPLOYMENT.md` (langkah deploy + rollback + peringatan restart worker).
+- **Evaluasi AI:** `app:ai-eval` menjalankan 3 fixture anonim (junior/mid/senior) terhadap provider nyata; tidak masuk CI (biaya + jaringan).
+- Test: `PromptInjectionTest` (7), `PruneFilesCommandTest` (6), `RateLimitTest` (6), `HealthTest` (4).
+
 ## 5. Risiko terbuka
 
 | Risiko | Dampak | Rencana |
@@ -160,4 +172,4 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 | Analisis memakai model yang sama dengan ekstraksi | Kualitas job-fit bergantung `OPENAI_MODEL` | Ganti model cukup lewat env; prompt terpisah per operasi |
 | Metrik tanpa bukti tetap tersimpan (hanya di-flag) | User bisa lupa menghapus klaim | Badge `unverified_claims` di UI; ekspor (P7) harus memblokir/metandai |
 | Regenerate per bagian masih membuat versi penuh | Boros token, versi menumpuk | Phase 6 (version history proper) / optimasi nanti |
-| Belum ada kuota AI per user | Biaya tak terkontrol | `ai_usage_logs` sudah mencatat; enforcement di Phase 8 |
+| ~~Belum ada kuota AI per user~~ | ~~Biaya tak terkontrol~~ | **Selesai (P8):** limiter per jam + kuota harian (`config/ai.php`) |

@@ -113,7 +113,7 @@ class GenerateDocumentJob implements ShouldQueue
         } catch (\Throwable $e) {
             Log::warning('Document generation failed', [
                 'document_id' => $document->id,
-                'error' => $e->getMessage(),
+                'error' => $e::class,
             ]);
 
             $document->markFailed('generation_failed');

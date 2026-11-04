@@ -1,15 +1,25 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import axios from 'axios';
+import { FormEvent, useState } from 'react';
 
 interface FormProps {
     languages: string[];
     defaultLanguage: string;
 }
 
+interface ImportedPosting {
+    title: string;
+    company: string;
+    location: string;
+    description: string;
+    qualifications: string;
+}
+
 const languageLabels: Record<string, string> = {
     id: 'Bahasa Indonesia',
     en: 'English',
+    ms: 'Bahasa Melayu',
 };
 
 export default function ApplicationCreate({ languages, defaultLanguage }: FormProps) {
@@ -23,9 +33,57 @@ export default function ApplicationCreate({ languages, defaultLanguage }: FormPr
         notes: '',
     });
 
+    const [url, setUrl] = useState('');
+    const [importing, setImporting] = useState(false);
+    const [importError, setImportError] = useState<string | null>(null);
+    const [importedFrom, setImportedFrom] = useState<string | null>(null);
+
     const submit = (e: FormEvent) => {
         e.preventDefault();
         post(route('applications.store'));
+    };
+
+    /**
+     * Prefills the form from a posting URL. Nothing is saved here: the user
+     * reviews and edits the extracted text before submitting.
+     */
+    const importFromUrl = async () => {
+        if (url.trim() === '' || importing) {
+            return;
+        }
+
+        setImporting(true);
+        setImportError(null);
+
+        try {
+            const { data: payload } = await axios.post<{ posting: ImportedPosting }>(
+                route('applications.import-url'),
+                { url },
+            );
+
+            const posting = payload.posting;
+
+            setData((current) => ({
+                ...current,
+                company_name: current.company_name || posting.company,
+                job_title: current.job_title || posting.title,
+                job_location: current.job_location || posting.location,
+                job_description: posting.description || current.job_description,
+                job_qualifications: posting.qualifications || current.job_qualifications,
+            }));
+
+            setImportedFrom(url);
+        } catch (error) {
+            const message =
+                axios.isAxiosError(error) && error.response?.status === 422
+                    ? ((error.response.data as { message?: string }).message ??
+                      'Gagal mengimpor lowongan.')
+                    : 'Tidak dapat menghubungi server. Coba lagi.';
+
+            setImportError(message);
+        } finally {
+            setImporting(false);
+        }
     };
 
     return (
@@ -47,6 +105,48 @@ export default function ApplicationCreate({ languages, defaultLanguage }: FormPr
             <Head title="Lamaran baru" />
 
             <form onSubmit={submit} className="space-y-6">
+                <section className="card p-5 sm:p-6">
+                    <h2 className="text-h3">Impor dari URL lowongan</h2>
+                    <p className="mt-1 text-small text-foreground-muted">
+                        Tempel tautan iklan lowongan, lalu periksa hasilnya sebelum menyimpan.
+                    </p>
+
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                        <input
+                            type="url"
+                            className="field-input flex-1"
+                            value={url}
+                            onChange={(e) => setUrl(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    void importFromUrl();
+                                }
+                            }}
+                            placeholder="https://contoh.com/lowongan/backend-engineer"
+                            inputMode="url"
+                            autoComplete="url"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => void importFromUrl()}
+                            disabled={importing || url.trim() === ''}
+                            className="btn-secondary shrink-0"
+                        >
+                            {importing ? 'Mengambil…' : 'Ambil isi lowongan'}
+                        </button>
+                    </div>
+
+                    {importError && <p className="field-error mt-2">{importError}</p>}
+
+                    {importedFrom && !importError && (
+                        <p className="mt-2 text-small text-foreground-muted">
+                            Terisi dari <span className="break-all font-medium">{importedFrom}</span>. Periksa dan
+                            sesuaikan sebelum menyimpan.
+                        </p>
+                    )}
+                </section>
+
                 <section className="card p-5 sm:p-6">
                     <h2 className="text-h3">Detail lowongan</h2>
 

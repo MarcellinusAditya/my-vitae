@@ -2,6 +2,7 @@
 
 namespace App\Services\Ai;
 
+use App\Models\Languages;
 use App\Services\ProfileSnapshotService;
 
 /**
@@ -71,7 +72,7 @@ class OpenAiCompatibleJobFitAnalysis implements JobFitAnalysisProvider
 
     private function prompt(string $profileText, string $jobText, string $language): string
     {
-        $outputLanguage = $language === 'en' ? 'English' : 'Bahasa Indonesia';
+        $outputLanguage = Languages::promptName($language);
 
         return <<<PROMPT
 You are a job-fit analyst. Compare the candidate profile with the job posting and report, requirement by requirement, whether the profile provides evidence.

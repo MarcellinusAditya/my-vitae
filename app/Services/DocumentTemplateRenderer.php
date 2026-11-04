@@ -32,7 +32,63 @@ class DocumentTemplateRenderer
             'certifications' => 'CERTIFICATIONS',
             'languages' => 'LANGUAGES',
         ],
+        'ms' => [
+            'summary' => 'RINGKASAN',
+            'skills' => 'KEMAHIRAN',
+            'experiences' => 'PENGALAMAN KERJA',
+            'projects' => 'PROJEK',
+            'education' => 'PENDIDIKAN',
+            'certifications' => 'PERSIJILAN',
+            'languages' => 'BAHASA',
+        ],
     ];
+
+    /**
+     * Visual presets. Every template stays single-column with real headings and
+     * text (no tables, columns, icons or images) so ATS parsers read it the same
+     * way; they differ only in typography and spacing.
+     *
+     * @var array<string, array{body: string, h1: string, h2: string, h3: string, meta: string, contact: string}>
+     */
+    public const TEMPLATE_STYLES = [
+        'ats_plain' => [
+            'body' => 'font-size:11pt;line-height:1.5',
+            'h1' => 'font-size:19pt;margin:0 0 2px;letter-spacing:.01em',
+            'h2' => 'font-size:11pt;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #ccc;padding-bottom:2px',
+            'h3' => 'font-size:10.5pt;margin:10px 0 0',
+            'meta' => 'font-size:9.5pt;color:#444;margin:0 0 4px',
+            'contact' => 'font-size:10pt;color:#333;margin:0 0 4px',
+        ],
+        'ats_compact' => [
+            'body' => 'font-size:10.5pt;line-height:1.35',
+            'h1' => 'font-size:17pt;margin:0 0 2px',
+            'h2' => 'font-size:10.5pt;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #ddd;padding-bottom:1px;margin:10px 0 4px',
+            'h3' => 'font-size:10pt;margin:6px 0 0',
+            'meta' => 'font-size:9pt;color:#444;margin:0 0 2px',
+            'contact' => 'font-size:9.5pt;color:#333;margin:0 0 2px',
+        ],
+        'ats_classic' => [
+            'body' => 'font-size:11.5pt;line-height:1.5',
+            'h1' => 'font-size:20pt;margin:0 0 4px;text-align:center;letter-spacing:.05em',
+            'h2' => 'font-size:11pt;text-transform:uppercase;letter-spacing:.12em;border-bottom:2px solid #111;padding-bottom:2px;margin:14px 0 6px',
+            'h3' => 'font-size:11pt;margin:10px 0 0',
+            'meta' => 'font-size:10pt;color:#222;margin:0 0 3px;text-align:center',
+            'contact' => 'font-size:10pt;color:#222;margin:0 0 6px;text-align:center',
+        ],
+        'modern_minimal' => [
+            'body' => 'font-size:10.8pt;line-height:1.55;color:#1f2937',
+            'h1' => 'font-size:21pt;margin:0 0 2px;font-weight:600;letter-spacing:-.01em',
+            'h2' => 'font-size:10pt;text-transform:uppercase;letter-spacing:.14em;color:#4b5563;border-bottom:none;padding-bottom:2px;margin:14px 0 5px',
+            'h3' => 'font-size:10.8pt;margin:9px 0 0;font-weight:600',
+            'meta' => 'font-size:9.3pt;color:#6b7280;margin:0 0 3px',
+            'contact' => 'font-size:9.6pt;color:#4b5563;margin:0 0 8px',
+        ],
+    ];
+
+    public static function styleFor(?string $templateKey): array
+    {
+        return self::TEMPLATE_STYLES[$templateKey ?? 'ats_plain'] ?? self::TEMPLATE_STYLES['ats_plain'];
+    }
 
     /**
      * Render the document body (no <html> wrapper) for embedding.
@@ -87,13 +143,11 @@ class DocumentTemplateRenderer
      */
     public function renderPage(GeneratedDocument $document): string
     {
-        $compact = $document->template_key === 'ats_compact';
+        $style = self::styleFor($document->template_key);
         $body = $this->render($document);
         $title = e($document->title);
 
-        $baseCss = $compact
-            ? 'font-size:10.5pt;line-height:1.35'
-            : 'font-size:11pt;line-height:1.5';
+        $baseCss = $style['body'];
 
         return <<<HTML
 <!DOCTYPE html>
@@ -105,11 +159,11 @@ class DocumentTemplateRenderer
 <style>
   *{box-sizing:border-box}
   body{margin:0;padding:32px 28px;font-family:Helvetica,Arial,sans-serif;color:#111;max-width:820px;background:#fff;{$baseCss}}
-  h1{font-size:19pt;margin:0 0 2px;letter-spacing:.01em}
-  .contact{font-size:10pt;color:#333;margin:0 0 4px}
-  h2{font-size:11pt;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #ccc;padding-bottom:2px}
-  h3{font-size:10.5pt;margin:10px 0 0}
-  .meta{font-size:9.5pt;color:#444;margin:0 0 4px}
+  h1{{$style['h1']}}
+  .contact{{$style['contact']}}
+  h2{{$style['h2']}}
+  h3{{$style['h3']}}
+  .meta{{$style['meta']}}
   ul{margin:4px 0 0 18px;padding:0}
   li{margin:0 0 3px}
   p{margin:0 0 8px}

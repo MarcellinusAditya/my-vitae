@@ -8,6 +8,16 @@ Referensi operasional untuk men-deploy MyVitae (Laravel 12 + Inertia/React).
 - Database (MySQL/PostgreSQL; pengembangan memakai SQLite).
 - Redis atau database sebagai queue backend (proyek ini memakai `QUEUE_CONNECTION=database`).
 - Web server (nginx + php-fpm) yang mengarah ke `public/`.
+- **OCR (wajib untuk CV hasil scan):** `tesseract-ocr`, paket bahasa (`tesseract-ocr-ind`,
+  `tesseract-ocr-eng`), dan `poppler-utils` (menyediakan `pdftoppm`).
+
+  ```bash
+  sudo apt-get install -y tesseract-ocr tesseract-ocr-ind tesseract-ocr-eng poppler-utils
+  tesseract --list-langs   # harus memuat ind dan eng
+  ```
+
+  Tanpa paket ini aplikasi tetap berjalan: PDF scan akan gagal dengan pesan
+  `no_text`, bukan error 500. Cek lewat `php -r` atau log `OCR unavailable`.
 
 ## Konfigurasi production wajib
 

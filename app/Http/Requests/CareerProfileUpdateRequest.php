@@ -18,6 +18,8 @@ class CareerProfileUpdateRequest extends FormRequest
         return [
             'title' => ['nullable', 'string', 'max:255'],
             'summary' => ['nullable', 'string', 'max:4000'],
+            'target_role' => ['nullable', 'string', 'max:120'],
+            'target_industry' => ['nullable', 'string', 'max:120'],
             'default_language' => ['required', Rule::in(CareerProfile::LANGUAGES)],
             'writing_style' => ['required', Rule::in(CareerProfile::WRITING_STYLES)],
             'resume_length' => ['required', Rule::in(CareerProfile::RESUME_LENGTHS)],

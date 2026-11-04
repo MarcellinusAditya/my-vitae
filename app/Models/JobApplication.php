@@ -33,7 +33,8 @@ class JobApplication extends Model
         self::STATUS_OFFER => 'Offer',
     ];
 
-    public const LANGUAGES = ['id', 'en'];
+    /** @var list<string> */
+    public const LANGUAGES = Languages::CODES;
 
     protected $fillable = [
         'user_id',

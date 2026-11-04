@@ -33,6 +33,8 @@ class GeneratedDocument extends Model
     public const TEMPLATES = [
         'ats_plain' => 'ATS Standar',
         'ats_compact' => 'ATS Rapat',
+        'ats_classic' => 'Klasik Formal',
+        'modern_minimal' => 'Modern Minimalis',
     ];
 
     /** Soft limits used for overflow warnings (not hard errors). */

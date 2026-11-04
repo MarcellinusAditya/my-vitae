@@ -63,6 +63,7 @@ class ProfileDocumentController extends Controller
             'mime_type' => $file->getMimeType(),
             'file_size' => $file->getSize() ?: 0,
             'extraction_status' => ProfileDocument::STATUS_PENDING,
+            'language' => $profile->default_language,
         ]);
 
         ExtractCvDocumentJob::dispatch($document->id);

@@ -22,7 +22,7 @@ class ProfileDocument extends Model
     /** Friendly, actionable messages for each failure code. Raw provider output is never shown. */
     public const ERROR_MESSAGES = [
         'unsupported_type' => 'Format file tidak didukung. Unggah PDF atau DOCX.',
-        'no_text' => 'Tidak ada teks yang bisa dibaca dari file ini. Jika ini hasil scan, unggah versi yang berisi teks atau DOCX.',
+        'no_text' => 'Tidak ada teks yang bisa dibaca dari file ini, termasuk setelah pemindaian OCR. Kirim versi yang berisi teks atau DOCX.',
         'provider_unavailable' => 'Layanan AI tidak tersedia atau belum dikonfigurasi. Coba lagi nanti.',
         'invalid_output' => 'Hasil pembacaan AI tidak dapat diproses. Coba unggah ulang file.',
         'extraction_failed' => 'Terjadi kesalahan saat membaca file. Coba lagi.',
@@ -49,6 +49,8 @@ class ProfileDocument extends Model
         'file_size',
         'extraction_status',
         'extraction_error_code',
+        'ocr_used',
+        'language',
         'draft',
         'model_name',
         'applied_at',
@@ -58,6 +60,7 @@ class ProfileDocument extends Model
     {
         return [
             'file_size' => 'integer',
+            'ocr_used' => 'boolean',
             'draft' => 'array',
             'applied_at' => 'datetime',
         ];

@@ -12,7 +12,10 @@ class OpenAiCompatibleCvExtraction implements CvExtractionProvider
 {
     private const MAX_INPUT_CHARS = 16000;
 
-    public function __construct(private readonly ChatCompletionClient $client) {}
+    public function __construct(
+        private readonly ChatCompletionClient $client,
+        private readonly PromptSanitizer $sanitizer,
+    ) {}
 
     public function name(): string
     {

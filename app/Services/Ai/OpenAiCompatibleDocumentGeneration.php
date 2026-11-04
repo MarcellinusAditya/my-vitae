@@ -2,6 +2,7 @@
 
 namespace App\Services\Ai;
 
+use App\Models\Languages;
 use App\Services\ProfileSnapshotService;
 
 /**
@@ -58,12 +59,15 @@ class OpenAiCompatibleDocumentGeneration implements DocumentGenerationProvider
         );
 
         $jobText = $this->sanitizer->wrap($this->jobText($job), 'job_posting');
-        $language = ($prefs['language'] ?? 'id') === 'en' ? 'English' : 'Bahasa Indonesia';
+        $language = Languages::promptName((string) ($prefs['language'] ?? 'id'));
         $length = ($prefs['resume_length'] ?? 'concise') === 'detailed' ? 'detailed (up to 4 bullets per role)' : 'concise (2-3 bullets per role)';
         $analysis = $this->analysisText($prefs);
+        $target = $this->targetLine($prefs);
 
         return <<<PROMPT
 You write ATS-friendly resumes. Rewrite ONLY what the candidate profile proves, tailored to the job.
+
+{$target}
 
 NON-NEGOTIABLE RULES:
 1. NEVER invent employers, job titles, dates, degrees, certifications, technologies, metrics, or achievements.
@@ -112,7 +116,7 @@ PROMPT;
         );
 
         $jobText = $this->sanitizer->wrap($this->jobText($job), 'job_posting');
-        $language = ($prefs['language'] ?? 'id') === 'en' ? 'English' : 'Bahasa Indonesia';
+        $language = Languages::promptName((string) ($prefs['language'] ?? 'id'));
         $tone = match ($prefs['tone'] ?? 'professional') {
             'formal' => 'formal and respectful',
             'warm' => 'warm yet professional',
@@ -178,6 +182,34 @@ PROMPT;
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Target role/industry steer emphasis. They describe aspiration only, so
+     * they must never be treated as evidence of experience.
+     *
+     * @param  array<string, mixed>  $prefs
+     */
+    private function targetLine(array $prefs): string
+    {
+        $role = trim((string) ($prefs['target_role'] ?? ''));
+        $industry = trim((string) ($prefs['target_industry'] ?? ''));
+
+        if ($role === '' && $industry === '') {
+            return '';
+        }
+
+        $parts = [];
+
+        if ($role !== '') {
+            $parts[] = "role: {$role}";
+        }
+
+        if ($industry !== '') {
+            $parts[] = "industry: {$industry}";
+        }
+
+        return 'CANDIDATE TARGET (emphasis only — never invent experience to match it): '.implode('; ', $parts).'.';
     }
 
     /**

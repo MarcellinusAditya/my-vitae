@@ -32,6 +32,19 @@ Semua berkas privat disimpan di disk `local` (di luar web root) dan hanya dapat 
 lewat endpoint terotorisasi (kepemilikan diverifikasi per pengguna). Jendela retensi ada di
 `RETENTION.md`.
 
+## Pemrosesan OCR
+
+CV hasil scan dibaca dengan **Tesseract di server ini sendiri**; gambar hasil render tidak
+dikirim ke layanan pihak ketiga. Berkas sementara (`/tmp/myvitae-ocr-*`) dihapus segera
+setelah pemrosesan selesai.
+
+## Impor lowongan dari URL
+
+Saat Anda menempel tautan lowongan, server mengambil halaman tersebut secara langsung.
+Alamat privat/loopback ditolak, dan situs yang memblokir pengambilan otomatis akan
+menampilkan pesan agar isinya ditempel manual. Yang disimpan hanya teks yang Anda setujui
+di formulir.
+
 ## Hak Anda
 
 - **Akses & koreksi**: seluruh data profil dapat Anda lihat dan ubah di aplikasi.

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\ProfileDocument;
 use App\Services\Ai\CvExtractionProvider;
+use App\Services\CvOcrExtractor;
 use App\Services\CvTextExtractor;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -23,7 +24,7 @@ class ExtractCvDocumentJob implements ShouldQueue
 
     public function __construct(public int $documentId) {}
 
-    public function handle(CvTextExtractor $extractor, CvExtractionProvider $provider): void
+    public function handle(CvTextExtractor $extractor, CvExtractionProvider $provider, CvOcrExtractor $ocr): void
     {
         $document = ProfileDocument::find($this->documentId);
 
@@ -46,6 +47,26 @@ class ExtractCvDocumentJob implements ShouldQueue
             }
 
             $text = $extractor->extract($absolutePath);
+
+            // A scanned PDF has no text layer; fall back to local OCR before
+            // giving up. OCR keeps the file on this host, unlike a cloud vision
+            // call, which matters for CVs.
+            if (mb_strlen($text) < 100 && strtolower(pathinfo($absolutePath, PATHINFO_EXTENSION)) === 'pdf') {
+                try {
+                    $ocrText = $ocr->extract($absolutePath, (string) ($document->language ?? 'id'));
+
+                    if (mb_strlen($ocrText) >= 100) {
+                        $text = $ocrText;
+                        $document->update(['ocr_used' => true]);
+                    }
+                } catch (\RuntimeException $e) {
+                    if ($e->getMessage() !== 'ocr_unavailable') {
+                        throw $e;
+                    }
+
+                    Log::warning('OCR unavailable for scanned PDF', ['document_id' => $document->id]);
+                }
+            }
 
             if (mb_strlen($text) < 100) {
                 // Scanned PDF or an almost empty file: report, do not guess.

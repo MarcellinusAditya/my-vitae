@@ -12,7 +12,8 @@ class CareerProfile extends Model
 {
     use HasFactory;
 
-    public const LANGUAGES = ['id', 'en'];
+    /** @var list<string> */
+    public const LANGUAGES = Languages::CODES;
 
     public const WRITING_STYLES = ['professional', 'formal', 'warm'];
 
@@ -23,6 +24,8 @@ class CareerProfile extends Model
     protected $fillable = [
         'user_id',
         'title',
+        'target_role',
+        'target_industry',
         'summary',
         'default_language',
         'writing_style',

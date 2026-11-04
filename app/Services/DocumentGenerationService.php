@@ -119,6 +119,8 @@ class DocumentGenerationService
                 'language' => $document->language,
                 'tone' => $document->tone ?? $profile->writing_style,
                 'resume_length' => $profile->resume_length,
+                'target_role' => $profile->target_role,
+                'target_industry' => $profile->target_industry,
                 'writing_style' => $profile->writing_style,
                 'analysis_requirements' => $analysis->analysis_json['requirements'] ?? [],
                 'analysis_summary' => $analysis->analysis_json['summary'] ?? '',

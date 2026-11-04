@@ -50,6 +50,8 @@ class CareerProfileService
             'profile' => [
                 'id' => $profile->id,
                 'title' => $profile->title,
+                'target_role' => $profile->target_role,
+                'target_industry' => $profile->target_industry,
                 'summary' => $profile->summary,
                 'default_language' => $profile->default_language,
                 'writing_style' => $profile->writing_style,

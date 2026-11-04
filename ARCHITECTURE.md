@@ -73,13 +73,15 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 
 ## 4. Kondisi implementasi saat ini
 
-(Section ini menggambarkan kondisi per Phase 8. Lihat bagian bawah untuk catatan Phase 1–8.)
+(Section ini menggambarkan kondisi per Phase 9. Lihat bagian bawah untuk catatan Phase 1–9.)
 
 - Model: `User`, `CareerProfile` + 6 section profil, `ProfileDocument` (P3), `JobApplication`, `JobRequirementAnalysis` (P4), `GeneratedDocument`, `AiUsageLog` (P5), `DocumentRevision` (P6), `DocumentExport` (P7).
 - Controller: `Auth/*`, `ProfileController`, `CareerProfileController`, 6 section controller, `ProfileDocumentController`, `JobApplicationController`, `GeneratedDocumentController`, `DocumentExportController`, `HealthController` (P8, queue health).
 - Service: profil & CV (`CareerProfileService`, `ProfileCompletenessService`, `ProfileSortOrderService`, `CvTextExtractor`, `CvProfileMergeService`), lamaran (`JobApplicationService`, `ProfileSnapshotService`), dokumen (`DocumentGenerationService`, `DocumentEditorService`, `DocumentTemplateRenderer`, `DocumentOutlineBuilder`), ekspor (`DocumentExportService`, `Exports\PdfExporter`, `Exports\DocxExporter`), pembersihan (`UserDataCleanupService`), `Ai\*` (+ `PromptSanitizer`, P8).
 - Middleware: `EnsureAiQuota` (P8, kuota harian AI).
 - Command: `app:prune-files` (P8, retensi), `app:queue-health` (P8, monitoring), `app:ai-eval` (P8, evaluasi manual).
+- Service (P9): `JobPostingFetcher` (impor lowongan), `CvOcrExtractor` (OCR lokal).
+- Model (P9): `Languages` (registri bahasa).
 - Job: `ExtractCvDocumentJob`, `AnalyzeJobApplicationJob`, `GenerateDocumentJob`.
 - Halaman: `Welcome`, `Dashboard`, auth, profile, `CareerProfile/Index`, `CareerProfile/Import/*`, `Applications/*`, `Documents/*`.
 
@@ -160,6 +162,16 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 - **Evaluasi AI:** `app:ai-eval` menjalankan 3 fixture anonim (junior/mid/senior) terhadap provider nyata; tidak masuk CI (biaya + jaringan).
 - Test: `PromptInjectionTest` (7), `PruneFilesCommandTest` (6), `RateLimitTest` (6), `HealthTest` (4).
 
+### Phase 9 — Post-MVP enhancements
+- **Impor lowongan dari URL:** `JobPostingFetcher` (http/https saja, resolusi DNS diperiksa terhadap rentang privat/loopback/reserved → anti-SSRF, batas 2 MB, timeout 10s, maks 3 redirect) + `DOMDocument` membuang nav/header/footer/script lalu memilih blok teks terpanjang; kualifikasi dipisah bila ada penanda. `POST /applications/import-url` (JSON, `throttle:uploads`) hanya **mengisi** formulir — penyimpanan tetap lewat validasi normal. Situs ber-blokir bot (401/403/406/429) memberi pesan `blocked_by_site`, bukan error generik.
+- **OCR lokal:** `CvOcrExtractor` memakai `pdftoppm` (300 DPI, maks 10 halaman) + `tesseract` dengan paket bahasa sesuai dokumen. Dipakai otomatis saat PDF tidak punya text layer (< 100 char); `profile_documents.ocr_used` mencatatnya. Data tidak keluar dari server. Tanpa binary → `ocr_unavailable`, aplikasi tetap jalan.
+- **Template:** 4 preset (`ats_plain`, `ats_compact`, `ats_classic`, `modern_minimal`) di `DocumentTemplateRenderer::TEMPLATE_STYLES` — semuanya satu kolom tanpa tabel/gambar/ikon agar ATS-safe; preview, PDF, dan DOCX membaca outline yang sama.
+- **Bahasa:** `App\Models\Languages` jadi satu sumber kebenaran (`id`, `en`, `ms`) untuk validasi, prompt AI, heading, dan UI. Ternary hardcode `=== 'en'` dihapus.
+- **Preferensi:** `career_profiles.target_role` + `target_industry` disuntik ke prompt sebagai "emphasis only" — eksplisit dilarang menjadi bahan mengarang pengalaman.
+- Test: `JobPostingImportTest` (8), `CvOcrTest` (2, memakai PDF image-only asli), `DocumentTemplateTest` (5, termasuk teks selectable per template), `PreferencesAndLanguagesTest` (6), `AiProviderWiringTest` (3).
+
+**Bug yang ditemukan & diperbaiki:** `OpenAiCompatibleCvExtraction` memakai `$this->sanitizer` yang tidak pernah di-inject (regresi dari Phase 8) sehingga setiap ekstraksi CV gagal saat runtime; test lama tidak menangkapnya karena tidak pernah me-resolve provider asli. `AiProviderWiringTest` sekarang mengunci wiring semua provider.
+
 ## 5. Risiko terbuka
 
 | Risiko | Dampak | Rencana |
@@ -168,7 +180,7 @@ validasi di Form Request, otorisasi di Policy, proses lama lewat queue job.
 | Queue worker tidak otomatis jalan di lokal | Job AI menumpuk di tabel `jobs` | Dokumentasikan `php artisan queue:work` (sudah di AGENTS.md) |
 | Provider gateway bisa balas SSE tanpa diminta | Parser provider gagal bila dihapus | Jalur SSE di `ChatCompletionClient` + catatan §4a |
 | AI usage/rate-limit belum dibatasi | Biaya tak terkontrol saat banyak impor/analisis | Phase 5/8 (§4.10 PROJECT_PLAN) |
-| PDF scan tanpa OCR | Import gagal dengan pesan jelas | OCR = Phase 9; saat ini `no_text` by design |
+| ~~PDF scan tanpa OCR~~ | ~~Import gagal~~ | **Selesai (P9):** OCR lokal Tesseract; tanpa binary → `no_text` |
 | Analisis memakai model yang sama dengan ekstraksi | Kualitas job-fit bergantung `OPENAI_MODEL` | Ganti model cukup lewat env; prompt terpisah per operasi |
 | Metrik tanpa bukti tetap tersimpan (hanya di-flag) | User bisa lupa menghapus klaim | Badge `unverified_claims` di UI; ekspor (P7) harus memblokir/metandai |
 | Regenerate per bagian masih membuat versi penuh | Boros token, versi menumpuk | Phase 6 (version history proper) / optimasi nanti |

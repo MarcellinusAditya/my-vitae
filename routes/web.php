@@ -6,6 +6,7 @@ use App\Http\Controllers\DocumentExportController;
 use App\Http\Controllers\GeneratedDocumentController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\JobApplicationController;
+use App\Http\Controllers\JobPostingImportController;
 use App\Http\Controllers\ProfileCertificationController;
 use App\Http\Controllers\ProfileContactController;
 use App\Http\Controllers\ProfileController;
@@ -76,6 +77,8 @@ Route::middleware('auth')->group(function () {
     // Job Applications
     Route::get('/applications', [JobApplicationController::class, 'index'])->name('applications.index');
     Route::get('/applications/create', [JobApplicationController::class, 'create'])->name('applications.create');
+    Route::post('/applications/import-url', [JobPostingImportController::class, 'store'])
+        ->middleware('throttle:uploads')->name('applications.import-url');
     Route::post('/applications', [JobApplicationController::class, 'store'])->name('applications.store');
     Route::get('/applications/{application}', [JobApplicationController::class, 'show'])->name('applications.show');
     Route::get('/applications/{application}/edit', [JobApplicationController::class, 'edit'])->name('applications.edit');

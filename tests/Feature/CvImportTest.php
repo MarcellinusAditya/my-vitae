@@ -6,6 +6,7 @@ use App\Jobs\ExtractCvDocumentJob;
 use App\Models\ProfileDocument;
 use App\Models\User;
 use App\Services\Ai\CvExtractionProvider;
+use App\Services\CvOcrExtractor;
 use App\Services\CvTextExtractor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -184,7 +185,7 @@ class CvImportTest extends TestCase
         $document = $this->createDocument($user);
 
         (new ExtractCvDocumentJob($document->id))
-            ->handle(new CvTextExtractor, $this->stubProvider($this->sampleDraft()));
+            ->handle(new CvTextExtractor, $this->stubProvider($this->sampleDraft()), new CvOcrExtractor);
 
         $document->refresh();
 
@@ -205,7 +206,7 @@ class CvImportTest extends TestCase
         $document = $this->createDocument($user, 'cv-uploads/scan.pdf');
 
         (new ExtractCvDocumentJob($document->id))
-            ->handle(new CvTextExtractor, $this->stubProvider($this->sampleDraft()));
+            ->handle(new CvTextExtractor, $this->stubProvider($this->sampleDraft()), new CvOcrExtractor);
 
         $document->refresh();
 
@@ -224,7 +225,7 @@ class CvImportTest extends TestCase
         $document = $this->createDocument($user);
 
         (new ExtractCvDocumentJob($document->id))
-            ->handle(new CvTextExtractor, $this->failingProvider());
+            ->handle(new CvTextExtractor, $this->failingProvider(), new CvOcrExtractor);
 
         $document->refresh();
 

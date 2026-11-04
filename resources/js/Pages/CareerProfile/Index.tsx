@@ -44,6 +44,8 @@ export default function CareerProfileIndex(props: CareerProfilePageProps) {
         title: profile?.title ?? '',
         summary: profile?.summary ?? '',
         default_language: profile?.default_language ?? options.languages[0],
+        target_role: profile?.target_role ?? '',
+        target_industry: profile?.target_industry ?? '',
         writing_style: profile?.writing_style ?? options.writingStyles[0],
         resume_length: profile?.resume_length ?? options.resumeLengths[0],
         date_format: profile?.date_format ?? options.dateFormats[0],
@@ -301,9 +303,18 @@ export default function CareerProfileIndex(props: CareerProfilePageProps) {
                                 <input id="title" value={pData.title} onChange={e => pSetData('title', e.target.value)} className="field-input" placeholder="Contoh: Senior Full Stack Engineer" />
                             </div>
                             <div>
+                                <label className="field-label" htmlFor="target_role">Target posisi</label>
+                                <input id="target_role" value={pData.target_role} onChange={e => pSetData('target_role', e.target.value)} className="field-input" maxLength={120} placeholder="Contoh: Backend Engineer" />
+                                <p className="field-hint">Dipakai AI untuk menekankan hal yang relevan, bukan sebagai bukti pengalaman.</p>
+                            </div>
+                            <div>
+                                <label className="field-label" htmlFor="target_industry">Target industri</label>
+                                <input id="target_industry" value={pData.target_industry} onChange={e => pSetData('target_industry', e.target.value)} className="field-input" maxLength={120} placeholder="Contoh: Fintech" />
+                            </div>
+                            <div>
                                 <label className="field-label" htmlFor="default_language">Bahasa dokumen</label>
                                 <select id="default_language" value={pData.default_language} onChange={e => pSetData('default_language', e.target.value)} className="field-input">
-                                    {options.languages.map((l: string) => <option key={l} value={l}>{l === 'id' ? 'Indonesia' : 'English'}</option>)}
+                                    {options.languages.map((l: string) => <option key={l} value={l}>{l === 'id' ? 'Indonesia' : l === 'en' ? 'English' : 'Melayu'}</option>)}
                                 </select>
                             </div>
                             <div>

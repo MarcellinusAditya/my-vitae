@@ -34,6 +34,12 @@ return [
             'driver' => 'local',
             'root' => storage_path('app/private'),
             'serve' => true,
+            // Group-writeable so the web server (www-data) and the queue worker
+            // can share files with the deploying user instead of blocking each other.
+            'permissions' => [
+                'file' => ['public' => 0664, 'private' => 0664],
+                'dir' => ['public' => 02775, 'private' => 02775],
+            ],
             'throw' => false,
             'report' => false,
         ],

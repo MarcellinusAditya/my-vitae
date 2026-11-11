@@ -22,6 +22,13 @@ use App\Models\GeneratedDocument;
  */
 class DocumentOutlineBuilder
 {
+    /** "still working here" label, per document language. */
+    public const PRESENT_LABELS = [
+        'id' => 'sekarang',
+        'en' => 'Present',
+        'ms' => 'kini',
+    ];
+
     /**
      * @return array<string, mixed>
      */
@@ -57,8 +64,11 @@ class DocumentOutlineBuilder
 
         $sections = [];
 
+        $language = (string) ($document->language ?? 'id');
+        $dateFormat = (string) ($document->jobApplication?->careerProfile?->date_format ?? 'month_year');
+
         foreach ($document->resolvedSectionOrder() as $key) {
-            $blocks = $this->sectionBlocks($key, $content);
+            $blocks = $this->sectionBlocks($key, $content, $language, $dateFormat);
 
             if ($blocks === []) {
                 continue;
@@ -127,15 +137,15 @@ class DocumentOutlineBuilder
      * @param  array<string, mixed>  $content
      * @return list<array<string, mixed>>
      */
-    private function sectionBlocks(string $key, array $content): array
+    private function sectionBlocks(string $key, array $content, string $language = 'id', string $dateFormat = 'month_year'): array
     {
         return match ($key) {
             'summary' => $this->paragraphBlock($content['summary'] ?? null),
             'skills' => $this->skillBlock($content['skills'] ?? []),
-            'experiences' => $this->experienceBlocks($content['experiences'] ?? []),
+            'experiences' => $this->experienceBlocks($content['experiences'] ?? [], $language, $dateFormat),
             'projects' => $this->projectBlocks($content['projects'] ?? []),
-            'education' => $this->educationBlocks($content['education'] ?? []),
-            'certifications' => $this->certificationBlocks($content['certifications'] ?? []),
+            'education' => $this->educationBlocks($content['education'] ?? [], $language, $dateFormat),
+            'certifications' => $this->certificationBlocks($content['certifications'] ?? [], $language, $dateFormat),
             'languages' => is_array($content['languages'] ?? null)
                 ? $this->paragraphBlock(implode(', ', array_filter(array_map('strval', $content['languages']))))
                 : $this->paragraphBlock($content['languages'] ?? null),
@@ -177,7 +187,7 @@ class DocumentOutlineBuilder
      * @param  array<int, mixed>  $experiences
      * @return list<array<string, mixed>>
      */
-    private function experienceBlocks(array $experiences): array
+    private function experienceBlocks(array $experiences, string $language = 'id', string $dateFormat = 'month_year'): array
     {
         $blocks = [];
 
@@ -197,7 +207,7 @@ class DocumentOutlineBuilder
                 'type' => 'entry',
                 'title' => $role ?? $organization,
                 'subtitle' => $organization,
-                'dates' => $this->dates($experience),
+                'dates' => $this->dates($experience, $language, $dateFormat),
                 'items' => $this->textList($experience['bullets'] ?? []),
             ];
         }
@@ -242,7 +252,7 @@ class DocumentOutlineBuilder
      * @param  array<int, mixed>  $educations
      * @return list<array<string, mixed>>
      */
-    private function educationBlocks(array $educations): array
+    private function educationBlocks(array $educations, string $language = 'id', string $dateFormat = 'month_year'): array
     {
         $blocks = [];
 
@@ -265,7 +275,7 @@ class DocumentOutlineBuilder
                 'type' => 'entry',
                 'title' => $institution,
                 'subtitle' => $subtitle,
-                'dates' => $this->dates($education),
+                'dates' => $this->dates($education, $language, $dateFormat),
                 'items' => [],
             ];
         }
@@ -277,7 +287,7 @@ class DocumentOutlineBuilder
      * @param  array<int, mixed>  $certifications
      * @return list<array<string, mixed>>
      */
-    private function certificationBlocks(array $certifications): array
+    private function certificationBlocks(array $certifications, string $language = 'id', string $dateFormat = 'month_year'): array
     {
         $items = [];
 
@@ -294,7 +304,7 @@ class DocumentOutlineBuilder
 
             $suffix = implode(' · ', array_filter([
                 $this->text($certification['issuer'] ?? null),
-                $this->text($certification['issue_date'] ?? null),
+                $this->formatDate($certification['issue_date'] ?? null, $language, $dateFormat),
             ]));
 
             $items[] = $suffix === '' ? $name : $name.' — '.$suffix;
@@ -306,16 +316,47 @@ class DocumentOutlineBuilder
     /**
      * @param  array<string, mixed>  $row
      */
-    private function dates(array $row): string
+    private function dates(array $row, string $language = 'id', string $dateFormat = 'month_year'): string
     {
-        $start = $this->text($row['start_date'] ?? null) ?? '';
-        $end = ! empty($row['is_current']) ? 'sekarang' : ($this->text($row['end_date'] ?? null) ?? '');
+        $start = $this->formatDate($row['start_date'] ?? null, $language, $dateFormat) ?? '';
+        $end = ! empty($row['is_current'])
+            ? self::PRESENT_LABELS[$language] ?? self::PRESENT_LABELS['en']
+            : ($this->formatDate($row['end_date'] ?? null, $language, $dateFormat) ?? '');
 
         if ($start === '' && $end === '') {
             return '';
         }
 
         return trim($start.' – '.$end, ' –');
+    }
+
+    /**
+     * Render an ISO-ish date using the format chosen in the career profile.
+     *
+     * Documents are read by recruiters, so a raw "2022-03-01" is never shown:
+     * unparseable values fall through to the original text.
+     */
+    private function formatDate(mixed $value, string $language, string $dateFormat): ?string
+    {
+        $raw = $this->text($value);
+
+        if ($raw === null) {
+            return null;
+        }
+
+        try {
+            $date = \Illuminate\Support\Carbon::parse($raw);
+        } catch (\Throwable) {
+            return $raw;
+        }
+
+        $locale = $language === 'id' ? 'id' : ($language === 'ms' ? 'ms' : 'en');
+
+        return match ($dateFormat) {
+            'numeric' => $date->format('m/Y'),
+            'year_only' => $date->format('Y'),
+            default => $date->locale($locale)->translatedFormat('M Y'),
+        };
     }
 
     /**

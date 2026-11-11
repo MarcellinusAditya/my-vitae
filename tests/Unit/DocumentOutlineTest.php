@@ -92,7 +92,8 @@ class DocumentOutlineTest extends TestCase
         $this->assertSame('entry', $entry['type']);
         $this->assertSame('Dev', $entry['title']);
         $this->assertSame('Acme', $entry['subtitle']);
-        $this->assertSame('2022-01-01 – sekarang', $entry['dates']);
+        // Dates are rendered for humans, never as raw ISO strings.
+        $this->assertSame('Jan 2022 – sekarang', $entry['dates']);
         $this->assertSame(['Did things.'], $entry['items']);
     }
 

@@ -56,6 +56,29 @@ interface Revision {
     created_at: string;
 }
 
+/** Month names per document language, matching the exported document. */
+const MONTHS: Record<string, string[]> = {
+    en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+    id: ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
+    ms: ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogos', 'Sep', 'Okt', 'Nov', 'Dis'],
+};
+
+const PRESENT: Record<string, string> = { en: 'Present', id: 'sekarang', ms: 'kini' };
+
+/**
+ * Dates are read by recruiters, so the editor shows the same human-readable
+ * form as the exported document instead of a raw ISO string.
+ */
+function formatDate(value: string | null | undefined, language: string): string {
+    if (!value) return '?';
+    const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value.trim());
+    if (!match) return value;
+    const [, year, month] = match;
+    const names = MONTHS[language] ?? MONTHS.en;
+    const idx = Number(month) - 1;
+    return idx >= 0 && idx < 12 ? `${names[idx]} ${year}` : value;
+}
+
 interface DocumentPayload {
     id: number;
     type: 'resume' | 'cover_letter';
@@ -441,8 +464,10 @@ export default function DocumentShow(props: ShowProps) {
                                                 <div key={`${experience.organization}-${index}`} className="rounded-xl border border-border bg-surface-muted p-4">
                                                     <p className="text-h3">{experience.role}</p>
                                                     <p className="text-small text-foreground-muted">
-                                                        {experience.organization} · {experience.start_date ?? '?'} –{' '}
-                                                        {experience.is_current ? 'sekarang' : (experience.end_date ?? '?')}
+                                                        {experience.organization} · {formatDate(experience.start_date, document.language)} –{' '}
+                                                        {experience.is_current
+                                                            ? PRESENT[document.language] ?? PRESENT.en
+                                                            : formatDate(experience.end_date, document.language)}
                                                     </p>
                                                     <div className="mt-3 space-y-2">
                                                         {(experience.bullets ?? []).map((bullet, bulletIndex) => (

@@ -86,7 +86,7 @@ export default function ImportIndex({ documents, maxFileSizeMb, flash }: ImportI
                 <section className="card p-5 sm:p-6">
                     <h2 className="text-h3">Unggah file</h2>
                     <p className="mt-0.5 text-small text-foreground-muted">
-                        Format PDF (berisi teks, bukan hasil scan) atau DOCX. Maksimal {maxFileSizeMb} MB.
+                        Format PDF (termasuk hasil scan — dibaca dengan OCR) atau DOCX. Maksimal {maxFileSizeMb} MB.
                     </p>
 
                     <form onSubmit={submit} className="mt-4 space-y-4">
